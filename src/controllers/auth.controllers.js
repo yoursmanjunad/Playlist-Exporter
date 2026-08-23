@@ -1,5 +1,6 @@
 import userModel from "../models/user.models.js";
-import crypto from "crypto";
+import crypto, { secureHeapUsed } from "crypto";
+import { access } from "fs";
 import jwt from "jsonwebtoken";
 
 export async function register(req, res) {
@@ -29,23 +30,34 @@ export async function register(req, res) {
         });
 
         // Generate JWT
-        const token = jwt.sign(
+        const accessToken = jwt.sign(
             {
                 id: user._id
             },
             process.env.JWT_SECRET,
             {
-                expiresIn: "1d"
+                expiresIn: "15m"
             }
         );
+        const refreshToken = jwt.sign({
+            id: user._id
+        }, process.env.JWT_SECRET, {
+            expiresIn: "7d"
+        })
 
+        res.cookie("refreshToken", refreshToken, {
+            httpOnly: true,
+            secure: true, 
+            sameSite: "strict",
+            maxAge: 7*24*60*60*1000
+        })
         return res.status(201).json({
             message: "User created successfully.",
             user: {
                 email: user.email,
                 name: user.name
             },
-            token
+            accessToken,
         });
 
     } catch (error) {
@@ -88,4 +100,34 @@ export async function getMe(req, res) {
             message: "Internal server error"
     });
 }
+}
+
+export async function refreshToken(req, res){
+    const refreshToken = req.cookies.refreshToken;
+    if(!refreshToken){
+        res.status(401).json({
+            message: "Token Not Found"
+        })
+    }
+    const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
+    const accessToken = jwt.sign({
+        id: decoded.id
+    }, process.env.JWT_SECRET, {
+        expiresIn: "15m"
+    })
+    const newRefreshToken = jwt.sign({
+        id: decoded.id
+    }, process.env.JWT_SECRET, {
+        expiresIn: "7d"
+    })
+    res.cookie("refreshToken", newRefreshToken, {
+        httpOnly: true, 
+        secure: true, 
+        sameSite: "strict",
+        maxAge: 7 * 24 * 60 * 60 * 1000
+    })
+    res.status(200).json({
+        message: "Access token refreshed successfully!",
+        accessToken
+    })
 }
