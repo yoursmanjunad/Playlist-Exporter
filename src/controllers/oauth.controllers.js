@@ -1,10 +1,13 @@
+import connectedAccount from "../models/connectedAccount.models.js";
+
 // Handles Spotify Login
 export async function spotifyLogin(req, res) {
     try {
         const scopes = [
             "user-read-private",
             "playlist-read-private",
-            "playlist-read-collaborative"
+            "playlist-read-collaborative",
+            "user-read-email"
         ];
 
         const params = new URLSearchParams({
@@ -61,7 +64,16 @@ export async function spotifyCallback(req, res) {
                 error: tokenData
             });
         }
-
+        // USER DETAILS 
+        const profileResponse = await fetch(
+            "https://api.spotify.com/v1/me",
+            {
+                headers: {
+                    Authorization: `Bearer ${tokenData.access_token}`
+                }
+            }
+        );
+        const spotifyProfile = await profileResponse.json();
         return res.json({
             message: "Spotify connected successfully",
             accessToken: tokenData.access_token,
@@ -77,4 +89,39 @@ export async function spotifyCallback(req, res) {
             message: "There's some error at callback."
         });
     }
+}
+
+// Spotify RefreshToken
+export async function spotifyRefreshToken(refreshToken) {
+    const response = await fetch(
+        "https://accounts.spotify.com/api/token",
+        {
+            method: "POST",
+
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded",
+
+                Authorization:
+                    "Basic " +
+                    Buffer.from(
+                        `${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`
+                    ).toString("base64")
+            },
+
+            body: new URLSearchParams({
+                grant_type: "refresh_token",
+                refresh_token: refreshToken
+            })
+        }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+        throw new Error(
+            data.error_description || "Failed to refresh Spotify token"
+        );
+    }
+
+    return data;
 }

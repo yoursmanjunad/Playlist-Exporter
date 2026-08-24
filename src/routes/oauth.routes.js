@@ -1,7 +1,11 @@
-import {Router} from "express";
-import { spotifyCallback, spotifyLogin } from "../controllers/oauth.controllers.js";
+import { Router } from "express";
+import { spotifyCallback, spotifyLogin, spotifyRefreshToken } from "../controllers/oauth.controllers.js";
+import { authenticate } from "../middleware/auth.middleware.js"
 const oauthRouter = Router();
-
-oauthRouter.get("/spotify-login",spotifyLogin)
-oauthRouter.get("/spotify-callback", spotifyCallback)
+// GET /api/oauth/spotify-login
+oauthRouter.get("/spotify-login", authenticate, spotifyLogin)
+// GET /api/oauth/spotify-callback
+oauthRouter.get("/spotify-callback", authenticate, spotifyCallback)
+// GET /api/oauth/spotify-refresh-token
+oauthRouter.get("/spotify-refresh-token", authenticate, spotifyRefreshToken)
 export default oauthRouter;

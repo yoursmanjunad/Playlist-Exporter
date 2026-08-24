@@ -31,7 +31,7 @@ app.get("/", (req, res) => {
 app.use("/api/auth", authRouter);
 app.use("/api/oauth", oauthRouter);
 
-app.listen(port, async () => {
-    await connectDb();
+await connectDb();
+app.listen(port, () => {
     console.log(`This app is running on port ${port}`);
 });
