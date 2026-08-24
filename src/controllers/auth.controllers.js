@@ -2,6 +2,8 @@ import userModel from "../models/user.models.js";
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
 
+const isProduction = process.env.NODE_ENV === "production";
+
 export async function register(req, res) {
     try {
         const { email, password, name } = req.body;
@@ -36,24 +38,27 @@ export async function register(req, res) {
 
         // Generate JWT
         const accessToken = jwt.sign(
-            {
-                id: user._id
-            },
+            { id: user._id },
             process.env.JWT_SECRET,
-            {
-                expiresIn: "15m"
-            }
+            { expiresIn: "15m" }
         );
-        const refreshToken = jwt.sign({
-            id: user._id
-        }, process.env.JWT_SECRET, {
-            expiresIn: "7d"
-        });
+        const refreshToken = jwt.sign(
+            { id: user._id },
+            process.env.JWT_SECRET,
+            { expiresIn: "7d" }
+        );
 
+        // Set cookies (secure: false for local HTTP dev, sameSite: 'lax')
+        res.cookie("accessToken", accessToken, {
+            httpOnly: true,
+            secure: isProduction,
+            sameSite: "lax",
+            maxAge: 15 * 60 * 1000
+        });
         res.cookie("refreshToken", refreshToken, {
             httpOnly: true,
-            secure: true, 
-            sameSite: "strict",
+            secure: isProduction,
+            sameSite: "lax",
             maxAge: 7 * 24 * 60 * 60 * 1000
         });
 
@@ -69,7 +74,6 @@ export async function register(req, res) {
 
     } catch (error) {
         console.error(error);
-
         return res.status(500).json({
             message: "Internal server error"
         });
@@ -107,24 +111,27 @@ export async function login(req, res) {
 
         // Generate JWT
         const accessToken = jwt.sign(
-            {
-                id: user._id
-            },
+            { id: user._id },
             process.env.JWT_SECRET,
-            {
-                expiresIn: "15m"
-            }
+            { expiresIn: "15m" }
         );
-        const refreshToken = jwt.sign({
-            id: user._id
-        }, process.env.JWT_SECRET, {
-            expiresIn: "7d"
-        });
+        const refreshToken = jwt.sign(
+            { id: user._id },
+            process.env.JWT_SECRET,
+            { expiresIn: "7d" }
+        );
 
+        // Set accessToken & refreshToken cookies
+        res.cookie("accessToken", accessToken, {
+            httpOnly: true,
+            secure: isProduction,
+            sameSite: "lax",
+            maxAge: 15 * 60 * 1000
+        });
         res.cookie("refreshToken", refreshToken, {
             httpOnly: true,
-            secure: true,
-            sameSite: "strict",
+            secure: isProduction,
+            sameSite: "lax",
             maxAge: 7 * 24 * 60 * 60 * 1000
         });
 
@@ -167,7 +174,7 @@ export async function getMe(req, res) {
     }
 }
 
-export async function refreshToken(req, res){
+export async function refreshToken(req, res) {
     try {
         const refreshToken = req.cookies.refreshToken;
         if (!refreshToken) {
@@ -175,7 +182,7 @@ export async function refreshToken(req, res){
                 message: "Token Not Found"
             });
         }
-        const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET); 
+        const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
         const accessToken = jwt.sign({
             id: decoded.id
         }, process.env.JWT_SECRET, {
@@ -186,12 +193,20 @@ export async function refreshToken(req, res){
         }, process.env.JWT_SECRET, {
             expiresIn: "7d"
         });
+
+        res.cookie("accessToken", accessToken, {
+            httpOnly: true,
+            secure: isProduction,
+            sameSite: "lax",
+            maxAge: 15 * 60 * 1000
+        });
         res.cookie("refreshToken", newRefreshToken, {
-            httpOnly: true, 
-            secure: true, 
-            sameSite: "strict",
+            httpOnly: true,
+            secure: isProduction,
+            sameSite: "lax",
             maxAge: 7 * 24 * 60 * 60 * 1000
         });
+
         return res.status(200).json({
             message: "Access token refreshed successfully!",
             accessToken
@@ -201,4 +216,10 @@ export async function refreshToken(req, res){
             message: "Invalid or expired refresh token"
         });
     }
+}
+
+export async function logout(req, res) {
+    res.clearCookie("accessToken");
+    res.clearCookie("refreshToken");
+    return res.status(200).json({ message: "Logged out successfully" });
 }

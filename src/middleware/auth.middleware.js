@@ -16,7 +16,7 @@ export async function authenticate(req, res, next) {
             req.headers.authorization.startsWith("Bearer ")
         ) {
             token = req.headers.authorization.split(" ")[1];
-        } 
+        }
         // 2. Fallback to cookies if token not in Authorization header
         else if (req.cookies && (req.cookies.accessToken || req.cookies.token)) {
             token = req.cookies.accessToken || req.cookies.token;

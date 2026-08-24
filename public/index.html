@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ship Your Playlists - Auth & OAuth Test Bench</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --border: #334155;
+      --primary: #6366f1;
+      --primary-hover: #4f46e5;
+      --spotify: #1db954;
+      --spotify-hover: #1ed760;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --danger: #ef4444;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .container {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 32px;
+      width: 100%;
+      max-width: 480px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    }
+
+    h1 { font-size: 1.5rem; margin-bottom: 8px; font-weight: 700; text-align: center; }
+    p.subtitle { color: var(--text-muted); font-size: 0.9rem; text-align: center; margin-bottom: 24px; }
+
+    .tabs { display: flex; gap: 8px; margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+    .tab-btn {
+      flex: 1; background: none; border: none; color: var(--text-muted); padding: 8px;
+      font-weight: 600; cursor: pointer; border-radius: 6px; transition: all 0.2s;
+    }
+    .tab-btn.active { background: var(--border); color: var(--text); }
+
+    form { display: flex; flex-direction: column; gap: 14px; }
+    label { font-size: 0.85rem; color: var(--text-muted); font-weight: 500; }
+    input {
+      width: 100%; padding: 10px 12px; background: #0f172a; border: 1px solid var(--border);
+      border-radius: 6px; color: var(--text); font-size: 0.95rem; outline: none;
+    }
+    input:focus { border-color: var(--primary); }
+
+    button {
+      padding: 11px; border: none; border-radius: 6px; font-weight: 600; cursor: pointer;
+      font-size: 0.95rem; transition: background 0.2s;
+    }
+    .btn-primary { background: var(--primary); color: white; }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-spotify { background: var(--spotify); color: white; margin-top: 12px; width: 100%; display: flex; justify-content: center; align-items: center; gap: 8px; }
+    .btn-spotify:hover { background: var(--spotify-hover); }
+    .btn-danger { background: var(--danger); color: white; width: 100%; margin-top: 16px; }
+
+    .session-card { background: #0f172a; border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-top: 16px; }
+    .status-badge { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; margin-bottom: 10px; }
+    .badge-success { background: #059669; color: white; }
+    .badge-error { background: #dc2626; color: white; }
+
+    .info-row { font-size: 0.9rem; margin-bottom: 6px; display: flex; justify-content: space-between; }
+    .info-label { color: var(--text-muted); }
+    .info-val { font-weight: 600; text-align: right; word-break: break-all; }
+
+    .alert { padding: 10px; border-radius: 6px; font-size: 0.85rem; margin-bottom: 14px; display: none; }
+    .alert-error { background: #7f1d1d; color: #fca5a5; }
+    .alert-success { background: #064e3b; color: #6ee7b7; }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <h1>ShipYourPlaylists</h1>
+    <p class="subtitle">Session & OAuth Browser Tester</p>
+
+    <div id="alertBox" class="alert"></div>
+
+    <!-- AUTH SECTION (Show when not logged in) -->
+    <div id="authSection">
+      <div class="tabs">
+        <button class="tab-btn active" id="loginTabBtn" onclick="showTab('login')">Login</button>
+        <button class="tab-btn" id="registerTabBtn" onclick="showTab('register')">Register</button>
+      </div>
+
+      <!-- Login Form -->
+      <form id="loginForm" onsubmit="handleLogin(event)">
+        <div>
+          <label>Email</label>
+          <input type="email" id="loginEmail" placeholder="user@example.com" required>
+        </div>
+        <div>
+          <label>Password</label>
+          <input type="password" id="loginPassword" placeholder="••••••••" required>
+        </div>
+        <button type="submit" class="btn-primary">Login to Dashboard</button>
+      </form>
+
+      <!-- Register Form -->
+      <form id="registerForm" onsubmit="handleRegister(event)" style="display: none;">
+        <div>
+          <label>Name</label>
+          <input type="text" id="regName" placeholder="John Doe">
+        </div>
+        <div>
+          <label>Email</label>
+          <input type="email" id="regEmail" placeholder="user@example.com" required>
+        </div>
+        <div>
+          <label>Password</label>
+          <input type="password" id="regPassword" placeholder="••••••••" required>
+        </div>
+        <button type="submit" class="btn-primary">Create Account</button>
+      </form>
+    </div>
+
+    <!-- DASHBOARD SECTION (Show when logged in) -->
+    <div id="dashboardSection" style="display: none;">
+      <div class="session-card">
+        <span class="status-badge badge-success">Session Active</span>
+        <div class="info-row"><span class="info-label">Name:</span> <span class="info-val" id="userName">-</span></div>
+        <div class="info-row"><span class="info-label">Email:</span> <span class="info-val" id="userEmail">-</span></div>
+        <div class="info-row"><span class="info-label">User ID:</span> <span class="info-val" id="userId">-</span></div>
+      </div>
+
+      <div class="session-card" style="margin-top: 16px;">
+        <span id="spotifyBadge" class="status-badge badge-error">Spotify Not Connected</span>
+        <div class="info-row"><span class="info-label">Account:</span> <span class="info-val" id="spotifyName">Disconnected</span></div>
+
+        <button id="spotifyBtn" class="btn-spotify" onclick="connectSpotify()">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.376 0 0 5.376 0 12s5.376 12 12 12 12-5.376 12-12S18.624 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.899 4.56-1.021 8.52-.6 11.64 1.32.42.18.48.66.3.1020zm1.48-3.3c-.3.48-.9.66-1.38.36-3.24-1.98-8.16-2.58-11.94-1.44-.54.18-1.14-.12-1.32-.66-.18-.54.12-1.14.66-1.32 4.32-1.32 9.72-.66 13.56 1.68.42.3.6.9.42 1.38zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.3c-.6.18-1.26-.18-1.44-.78-.18-.6.18-1.26.78-1.44 4.26-1.26 11.28-1.02 15.72 1.62.54.3.72 1.02.42 1.56-.3.42-1.02.66-1.5.36z"/></svg>
+          Connect Spotify OAuth
+        </button>
+      </div>
+
+      <button class="btn-danger" onclick="handleLogout()">Logout Session</button>
+    </div>
+
+  </div>
+
+  <script>
+    const API_BASE = '';
+
+    function showAlert(msg, type = 'error') {
+      const alert = document.getElementById('alertBox');
+      alert.className = `alert alert-${type}`;
+      alert.innerText = msg;
+      alert.style.display = 'block';
+      setTimeout(() => { alert.style.display = 'none'; }, 4000);
+    }
+
+    function showTab(tab) {
+      document.getElementById('loginForm').style.display = tab === 'login' ? 'flex' : 'none';
+      document.getElementById('registerForm').style.display = tab === 'register' ? 'flex' : 'none';
+      document.getElementById('loginTabBtn').className = `tab-btn ${tab === 'login' ? 'active' : ''}`;
+      document.getElementById('registerTabBtn').className = `tab-btn ${tab === 'register' ? 'active' : ''}`;
+    }
+
+    async function checkSession() {
+      try {
+        const res = await fetch(`${API_BASE}/api/auth/get-me`, { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          renderDashboard(data.user);
+          checkSpotifyStatus();
+        } else {
+          renderAuth();
+        }
+      } catch (err) {
+        renderAuth();
+      }
+    }
+
+    async function checkSpotifyStatus() {
+      try {
+        const res = await fetch(`${API_BASE}/api/oauth/spotify-status`, { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          const badge = document.getElementById('spotifyBadge');
+          const name = document.getElementById('spotifyName');
+          if (data.connected) {
+            badge.className = 'status-badge badge-success';
+            badge.innerText = 'Spotify Connected';
+            name.innerText = data.account.providerDisplayName || data.account.providerEmail || 'Connected';
+          } else {
+            badge.className = 'status-badge badge-error';
+            badge.innerText = 'Spotify Not Connected';
+            name.innerText = 'Disconnected';
+          }
+        }
+      } catch (err) {
+        console.error('Spotify status error', err);
+      }
+    }
+
+    function renderDashboard(user) {
+      document.getElementById('authSection').style.display = 'none';
+      document.getElementById('dashboardSection').style.display = 'block';
+      document.getElementById('userName').innerText = user.name || 'User';
+      document.getElementById('userEmail').innerText = user.email;
+      document.getElementById('userId').innerText = user.id;
+    }
+
+    function renderAuth() {
+      document.getElementById('authSection').style.display = 'block';
+      document.getElementById('dashboardSection').style.display = 'none';
+    }
+
+    async function handleLogin(e) {
+      e.preventDefault();
+      const email = document.getElementById('loginEmail').value;
+      const password = document.getElementById('loginPassword').value;
+
+      try {
+        const res = await fetch(`${API_BASE}/api/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ email, password })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          showAlert('Login successful!', 'success');
+          checkSession();
+        } else {
+          showAlert(data.message || 'Login failed');
+        }
+      } catch (err) {
+        showAlert('Network error during login');
+      }
+    }
+
+    async function handleRegister(e) {
+      e.preventDefault();
+      const name = document.getElementById('regName').value;
+      const email = document.getElementById('regEmail').value;
+      const password = document.getElementById('regPassword').value;
+
+      try {
+        const res = await fetch(`${API_BASE}/api/auth/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ name, email, password })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          showAlert('Account registered!', 'success');
+          checkSession();
+        } else {
+          showAlert(data.message || 'Registration failed');
+        }
+      } catch (err) {
+        showAlert('Network error during registration');
+      }
+    }
+
+    async function handleLogout() {
+      try {
+        await fetch(`${API_BASE}/api/auth/logout`, { method: 'POST', credentials: 'include' });
+        showAlert('Logged out', 'success');
+        renderAuth();
+      } catch (err) {
+        showAlert('Failed to logout');
+      }
+    }
+
+    function connectSpotify() {
+      // Redirect browser to spotify login endpoint
+      window.location.href = `${API_BASE}/api/oauth/spotify-login`;
+    }
+
+    // Check query params for spotify callback notification
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('spotify') === 'connected') {
+      showAlert('Spotify account connected successfully!', 'success');
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
+    // Init on page load
+    checkSession();
+  </script>
+</body>
+</html>

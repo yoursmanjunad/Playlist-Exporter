@@ -16,4 +16,7 @@ authRouter.get("/get-me", authenticate, authController.getMe);
 // GET /api/auth/refresh-token
 authRouter.get("/refresh-token", authController.refreshToken);
 
+// POST /api/auth/logout
+authRouter.post("/logout", authController.logout);
+
 export default authRouter;
