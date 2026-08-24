@@ -50,6 +50,32 @@ export async function authenticate(req, res, next) {
         req.user = user;
         next();
     } catch (error) {
+        // Fallback: If accessToken expired, check if valid refreshToken cookie exists to auto-refresh session
+        if (error.name === "TokenExpiredError" && req.cookies && req.cookies.refreshToken) {
+            try {
+                const refreshDecoded = jwt.verify(req.cookies.refreshToken, process.env.JWT_SECRET);
+                const user = await userModel.findById(refreshDecoded.id).select("-passwordHash");
+                if (user && user.isActive !== false) {
+                    const isProduction = process.env.NODE_ENV === "production";
+                    const newAccessToken = jwt.sign(
+                        { id: user._id },
+                        process.env.JWT_SECRET,
+                        { expiresIn: "1d" }
+                    );
+                    res.cookie("accessToken", newAccessToken, {
+                        httpOnly: true,
+                        secure: isProduction,
+                        sameSite: "lax",
+                        maxAge: 24 * 60 * 60 * 1000
+                    });
+                    req.user = user;
+                    return next();
+                }
+            } catch (refreshErr) {
+                console.error("Middleware auto refresh token error:", refreshErr);
+            }
+        }
+
         if (error.name === "TokenExpiredError") {
             return res.status(401).json({
                 message: "Token has expired."

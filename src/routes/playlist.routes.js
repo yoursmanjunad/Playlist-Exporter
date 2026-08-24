@@ -1,57 +1,13 @@
-import ConnectedAccount from "../models/connectedAccount.model.js";
+import { Router } from "express";
+import { authenticate } from "../middleware/auth.middleware.js";
+import { getSpotifyPlaylists, getSpotifyPlaylistTracks } from "../controllers/playlist.controller.js";
+const playlistRouter = Router();
 
-export async function getSpotifyPlaylists(req, res) {
-    try {
-        const userId = req.user._id;
+// GET /api/playlist/spotify - Lists the user's playlists. 
+playlistRouter.get("/spotify", authenticate, getSpotifyPlaylists);
 
-        const account = await ConnectedAccount
-            .findOne({
-                userId,
-                provider: "spotify",
-                status: "connected"
-            })
-            .select("+accessToken +refreshToken");
+// GET /api/playlist/spotify/:playlistId & /tracks - Lists all the tracks of the particular playlist. 
+playlistRouter.get("/spotify/:playlistId", authenticate, getSpotifyPlaylistTracks);
+playlistRouter.get("/spotify/:playlistId/tracks", authenticate, getSpotifyPlaylistTracks);
 
-        if (!account) {
-            return res.status(404).json({
-                message: "Spotify account is not connected."
-            });
-        }
-
-        const response = await fetch(
-            "https://api.spotify.com/v1/me/playlists",
-            {
-                headers: {
-                    Authorization: `Bearer ${account.accessToken}`
-                }
-            }
-        );
-
-        const data = await response.json();
-
-        if (!response.ok) {
-            return res.status(response.status).json({
-                message: "Failed to fetch Spotify playlists",
-                error: data
-            });
-        }
-
-        const playlists = data.items.map((playlist) => ({
-            id: playlist.id,
-            name: playlist.name,
-            image: playlist.images?.[0]?.url || null,
-            tracksCount: playlist.items?.total ?? playlist.tracks?.total ?? 0
-        }));
-
-        return res.status(200).json({
-            playlists
-        });
-
-    } catch (error) {
-        console.error("Get Spotify playlists error:", error);
-
-        return res.status(500).json({
-            message: "Failed to fetch Spotify playlists"
-        });
-    }
-}
+export default playlistRouter;

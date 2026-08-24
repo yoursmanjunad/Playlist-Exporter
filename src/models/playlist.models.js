@@ -1,5 +1,4 @@
-import mongoose from "mongoose";
-import Schema from "mongoose"
+import mongoose, { Schema } from "mongoose";
 
 /**
  * PLAYLIST
@@ -44,5 +43,5 @@ const PlaylistSchema = new Schema(
 
 PlaylistSchema.index({ userId: 1, provider: 1, providerPlaylistId: 1 }, { unique: true });
 
-const playlistSchema = mongoose.model("playlist", playlistSchema);
-export default playlistSchema
+const playlistModel = mongoose.model("Playlist", PlaylistSchema);
+export default playlistModel;
