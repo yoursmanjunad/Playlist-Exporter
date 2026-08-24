@@ -6,6 +6,7 @@ import dotenv from "dotenv";
 import express from "express";
 import connectDb from "./database/db.js";
 import authRouter from "./routes/auth.routes.js";
+import oauthRouter from "./routes/oauth.routes.js";
 import cookieParser from "cookie-parser";
 const result = dotenv.config({
     path: ".env",
@@ -28,6 +29,7 @@ app.get("/", (req, res) => {
 });
 
 app.use("/api/auth", authRouter);
+app.use("/api/oauth", oauthRouter);
 
 app.listen(port, async () => {
     await connectDb();

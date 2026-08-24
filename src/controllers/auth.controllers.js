@@ -109,7 +109,7 @@ export async function refreshToken(req, res){
             message: "Token Not Found"
         })
     }
-    const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
+    const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET); 
     const accessToken = jwt.sign({
         id: decoded.id
     }, process.env.JWT_SECRET, {
