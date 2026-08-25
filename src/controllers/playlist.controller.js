@@ -1,5 +1,6 @@
 import connectedAccount from "../models/connectedAccount.models.js";
 import playlistModel from "../models/playlist.models.js";
+import trackModel from "../models/track.models.js"
 import { decrypt, encrypt } from "../utils/encryption.js";
 
 /**
@@ -127,7 +128,7 @@ export async function getSpotifyPlaylists(req, res) {
     }
 }
 
-// Pulls all the tracks of the particular playlist - SPOTIFY
+// Pulls all the tracks of the particular playlist and save to DB - SPOTIFY
 export async function getSpotifyPlaylistTracks(req, res) {
     try {
         const userId = req.user._id;
@@ -136,6 +137,23 @@ export async function getSpotifyPlaylistTracks(req, res) {
         if (!playlistId) {
             return res.status(400).json({
                 message: "Playlist ID is required."
+            });
+        }
+
+        console.log("USER ID:", userId);
+        console.log("SPOTIFY PLAYLIST ID: ", playlistId);
+
+        const playlist = await playlistModel.findOne({
+            userId,
+            provider: "spotify",
+            providerPlaylistId: playlistId
+        });
+
+        console.log("MONGO PLAYLIST: ", playlist);
+
+        if (!playlist) {
+            return res.status(404).json({
+                message: "Playlist not found in database. Fetch playlists first."
             });
         }
 
@@ -167,37 +185,103 @@ export async function getSpotifyPlaylistTracks(req, res) {
         const data = await response.json();
 
         if (!response.ok) {
-            console.error("Spotify API error response status:", response.status);
-            console.error("Spotify API error payload:", JSON.stringify(data, null, 2));
+            console.error(
+                "Spotify API error response status:",
+                response.status
+            );
+
+            console.error(
+                "Spotify API error payload:",
+                JSON.stringify(data, null, 2)
+            );
+
             return res.status(response.status).json({
                 message: "Failed to fetch playlist tracks.",
                 error: data
             });
         }
 
-        const rawItems = data.tracks?.items || data.items || [];
+        const rawItems = data.items || [];
+
         const tracks = rawItems
-            .map(item => item.track || item.item)
-            .filter(Boolean)
-            .map(t => ({
-                id: t.id,
-                name: t.name,
-                artists: (t.artists || []).map(artist => artist.name),
-                album: t.album?.name || null,
-                albumImage: t.album?.images?.[0]?.url || null,
-                durationMs: t.duration_ms
-            }));
+            .map((item) => item.track || item.item)
+            .filter(Boolean);
+
+        const trackDocuments = tracks.map((track, index) => ({
+            playlistId: playlist._id,
+            userId,
+
+            provider: "spotify",
+
+            providerTrackId: track.id,
+
+            title: track.name,
+
+            artists: (track.artists || []).map(
+                (artist) => artist.name
+            ),
+
+            album: track.album?.name || null,
+
+            albumArtUrl:
+                track.album?.images?.[0]?.url || null,
+
+            durationMs: track.duration_ms || null,
+
+            isrc: track.external_ids?.isrc || null,
+
+            position: index,
+
+            selectedForTransfer: true
+        }));
+
+        if (trackDocuments.length > 0) {
+            await trackModel.bulkWrite(
+                trackDocuments.map((track) => ({
+                    updateOne: {
+                        filter: {
+                            playlistId: playlist._id,
+                            providerTrackId: track.providerTrackId
+                        },
+
+                        update: {
+                            $set: track
+                        },
+
+                        upsert: true
+                    }
+                }))
+            );
+        }
+
+        playlist.trackCount = trackDocuments.length;
+        playlist.lastSyncedAt = new Date();
+
+        await playlist.save();
 
         return res.status(200).json({
-            playlistId,
-            playlistName: data.name || null,
-            tracks
+            message: "Playlist tracks fetched and saved successfully",
+
+            playlistId: playlist._id,
+
+            spotifyPlaylistId: playlistId,
+
+            playlistName: playlist.name,
+
+            count: trackDocuments.length,
+
+            tracks: trackDocuments
         });
 
     } catch (error) {
-        console.error("Get Spotify playlist tracks error:", error);
-        return res.status(500).json({
-            message: "Failed to fetch playlist tracks."
-        });
-    }
+    console.error("=================================");
+    console.error("Get Spotify playlist tracks error:");
+    console.error(error);
+    console.error("=================================");
+
+    return res.status(500).json({
+        message: "Failed to fetch playlist tracks.",
+        error: error.message
+    });
+}
 }
