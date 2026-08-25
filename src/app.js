@@ -10,6 +10,7 @@ import authRouter from "./routes/auth.routes.js";
 import oauthRouter from "./routes/oauth.routes.js";
 import cookieParser from "cookie-parser";
 import playlistRouter from "./routes/playlist.routes.js";
+import syncRouter from "./routes/sync.routes.js";
 
 const result = dotenv.config({
     path: ".env",
@@ -36,7 +37,7 @@ app.use(express.static("public"));
 app.use("/api/auth", authRouter);
 app.use("/api/oauth", oauthRouter);
 app.use("/api/playlist", playlistRouter);
-
+app.use("/api/sync/", syncRouter);
 await connectDb();
 app.listen(port, () => {
     console.log(`This app is running on port ${port}`);
