@@ -5,9 +5,6 @@ const playlistRouter = Router();
 
 // GET /api/playlist/spotify - Lists the user's playlists. 
 playlistRouter.get("/spotify", authenticate, getSpotifyPlaylists);
-
-// GET /api/playlist/spotify/:playlistId & /tracks - Lists all the tracks of the particular playlist. 
+// GET /api/playlist/spotify/:playlistId - Lists all the tracks of the particular playlist. 
 playlistRouter.get("/spotify/:playlistId", authenticate, getSpotifyPlaylistTracks);
-playlistRouter.get("/spotify/:playlistId/tracks", authenticate, getSpotifyPlaylistTracks);
-
 export default playlistRouter;

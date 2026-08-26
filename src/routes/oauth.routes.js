@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { spotifyCallback, spotifyLogin, spotifyRefreshToken, getSpotifyStatus } from "../controllers/oauth.controllers.js";
+import getYouTubeMe, { spotifyCallback, spotifyLogin, spotifyRefreshToken, getSpotifyStatus, connectYouTube, youtubeOAuthCallback } from "../controllers/oauth.controllers.js";
 import { authenticate } from "../middleware/auth.middleware.js";
 
 const oauthRouter = Router();
@@ -15,5 +15,14 @@ oauthRouter.get("/spotify-refresh-token", authenticate, spotifyRefreshToken);
 
 // GET /api/oauth/spotify-status (Protected: Check connection status)
 oauthRouter.get("/spotify-status", authenticate, getSpotifyStatus);
+
+// GET /api/oauth/youtube-login
+oauthRouter.get("/youtube-login", authenticate, connectYouTube);
+
+// GET /api/oauth/youtube-callback
+oauthRouter.get("/youtube-callback", youtubeOAuthCallback)
+
+// GET /api/youtube/me
+oauthRouter.get("/youtube/getme", authenticate, getYouTubeMe)
 
 export default oauthRouter;

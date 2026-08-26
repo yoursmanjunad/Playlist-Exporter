@@ -11,6 +11,8 @@ import oauthRouter from "./routes/oauth.routes.js";
 import cookieParser from "cookie-parser";
 import playlistRouter from "./routes/playlist.routes.js";
 import syncRouter from "./routes/sync.routes.js";
+import { authenticate } from "./middleware/auth.middleware.js";
+import { testYouTubeSearch } from "./services/youtube/youtube.client.js";
 
 const result = dotenv.config({
     path: ".env",
@@ -38,6 +40,7 @@ app.use("/api/auth", authRouter);
 app.use("/api/oauth", oauthRouter);
 app.use("/api/playlist", playlistRouter);
 app.use("/api/sync/", syncRouter);
+app.get("/api/test-search", authenticate, testYouTubeSearch)
 await connectDb();
 app.listen(port, () => {
     console.log(`This app is running on port ${port}`);

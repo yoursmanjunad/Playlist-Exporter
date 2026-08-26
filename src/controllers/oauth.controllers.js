@@ -1,5 +1,6 @@
 import connectedAccount from "../models/connectedAccount.models.js";
 import { encrypt, decrypt } from "../utils/encryption.js";
+import { getYouTubeClient } from "../services/youtube/youtube.service.js";
 
 // Handles Spotify Login & initiates OAuth redirect
 export async function spotifyLogin(req, res) {
@@ -266,6 +267,265 @@ export async function spotifyRefreshToken(req, res) {
         return res.status(500).json({
             message: "Error refreshing Spotify token",
             error: error.message
+        });
+    }
+}
+
+// Youtube OAuth controller
+
+
+import { google } from "googleapis";
+import {
+    createYouTubeOAuthClient,
+    getYouTubeAuthorizationUrl
+} from "../services/oauth/ytoauth.service.js";
+
+export async function connectYouTube(req, res) {
+    try {
+        const userId = req.user._id.toString();
+
+        const authorizationUrl = getYouTubeAuthorizationUrl(userId);
+        console.log("Google OAuth config:", {
+    clientIdExists: !!process.env.GOOGLE_CLIENT_ID,
+    clientIdLength: process.env.GOOGLE_CLIENT_ID?.length,
+    clientSecretExists: !!process.env.GOOGLE_CLIENT_SECRET,
+    redirectUri: process.env.GOOGLE_REDIRECT_URI
+});
+
+        return res.redirect(authorizationUrl);
+        
+
+    } catch (error) {
+        console.error("YouTube OAuth start error:", error);
+
+        return res.status(500).json({
+            message: "Failed to start YouTube OAuth"
+        });
+    }
+}
+// Callback
+
+export async function youtubeOAuthCallback(req, res) {
+    try {
+        const { code, state, error } = req.query;
+
+        if (error) {
+            console.error("YouTube OAuth error:", error);
+
+            return res.status(400).json({
+                message: "YouTube authorization failed",
+                error
+            });
+        }
+
+        if (!code) {
+            return res.status(400).json({
+                message: "Authorization code is missing."
+            });
+        }
+
+        const userId = state;
+
+        if (!userId) {
+            return res.status(400).json({
+                message: "Invalid OAuth state."
+            });
+        }
+
+        const oauth2Client = createYouTubeOAuthClient();
+
+        const { tokens } = await oauth2Client.getToken(code);
+
+        if (!tokens.access_token) {
+            return res.status(400).json({
+                message: "Google did not return an access token."
+            });
+        }
+
+        console.log("YouTube OAuth successful:", {
+            hasAccessToken: !!tokens.access_token,
+            hasRefreshToken: !!tokens.refresh_token,
+            expiryDate: tokens.expiry_date,
+            scope: tokens.scope
+        });
+
+
+        oauth2Client.setCredentials(tokens);
+
+        const youtube = google.youtube({
+            version: "v3",
+            auth: oauth2Client
+        });
+
+        const channelResponse = await youtube.channels.list({
+            part: ["snippet", "contentDetails", "statistics"],
+            mine: true
+        });
+
+        const channel = channelResponse.data.items?.[0];
+
+        if (!channel) {
+            return res.status(404).json({
+                message: "No YouTube channel found for this account."
+            });
+        }
+
+        const encryptedAccessToken = encrypt(
+            tokens.access_token
+        );
+
+        const encryptedRefreshToken = tokens.refresh_token
+            ? encrypt(tokens.refresh_token)
+            : undefined;
+
+        const accountData = {
+            userId,
+
+            provider: "youtube",
+
+            // YouTube channel ID
+            providerAccountId: channel.id,
+
+            providerDisplayName:
+                channel.snippet?.title || null,
+
+            providerAvatarUrl:
+                channel.snippet?.thumbnails?.default?.url ||
+                channel.snippet?.thumbnails?.high?.url ||
+                null,
+
+            accessToken: encryptedAccessToken,
+
+            tokenExpiresAt: tokens.expiry_date
+                ? new Date(tokens.expiry_date)
+                : new Date(Date.now() + 3600 * 1000),
+
+            scope: tokens.scope
+                ? tokens.scope.split(" ")
+                : [],
+
+            status: "connected",
+
+            lastError: null,
+
+            connectedAt: new Date(),
+
+            lastSyncedAt: new Date()
+        };
+
+        // Only replace refreshToken if Google actually
+        // returned one.
+        if (encryptedRefreshToken) {
+            accountData.refreshToken = encryptedRefreshToken;
+        }
+
+        const account = await connectedAccount.findOneAndUpdate(
+            {
+                userId,
+                provider: "youtube"
+            },
+            {
+                $set: accountData
+            },
+            {
+                upsert: true,
+                new: true,
+                setDefaultsOnInsert: true
+            }
+        );
+
+        return res.status(200).json({
+            message: "YouTube connected successfully",
+
+            youtube: {
+                channelId: channel.id,
+                name: channel.snippet?.title,
+                description: channel.snippet?.description,
+                avatarUrl:
+                    channel.snippet?.thumbnails?.high?.url ||
+                    channel.snippet?.thumbnails?.default?.url,
+                subscriberCount:
+                    channel.statistics?.subscriberCount || null,
+                videoCount:
+                    channel.statistics?.videoCount || null,
+                viewCount:
+                    channel.statistics?.viewCount || null
+            }
+        });
+
+    } catch (error) {
+        console.error(
+            "YouTube OAuth callback error:",
+            error.response?.data || error
+        );
+
+        return res.status(500).json({
+            message: "YouTube OAuth callback failed.",
+            error: error.message
+        });
+    }
+}
+
+
+export default async function getYouTubeMe(req, res) {
+    try {
+        const userId = req.user._id;
+
+        const youtube = await getYouTubeClient(userId);
+
+        const response = await youtube.channels.list({
+            part: ["snippet", "contentDetails", "statistics"],
+            mine: true
+        });
+
+        const channel = response.data.items?.[0];
+
+        if (!channel) {
+            return res.status(404).json({
+                message: "YouTube channel not found."
+            });
+        }
+
+        return res.status(200).json({
+            youtube: {
+                channelId: channel.id,
+
+                name: channel.snippet?.title,
+
+                description:
+                    channel.snippet?.description,
+
+                avatarUrl:
+                    channel.snippet?.thumbnails?.high?.url ||
+                    channel.snippet?.thumbnails?.default?.url,
+
+                country:
+                    channel.snippet?.country || null,
+
+                subscribers:
+                    channel.statistics?.subscriberCount || null,
+
+                videos:
+                    channel.statistics?.videoCount || null,
+
+                views:
+                    channel.statistics?.viewCount || null,
+
+                uploadsPlaylistId:
+                    channel.contentDetails
+                        ?.relatedPlaylists
+                        ?.uploads || null
+            }
+        });
+
+    } catch (error) {
+        console.error(
+            "Get YouTube user error:",
+            error.response?.data || error
+        );
+
+        return res.status(500).json({
+            message: "Failed to fetch YouTube account."
         });
     }
 }

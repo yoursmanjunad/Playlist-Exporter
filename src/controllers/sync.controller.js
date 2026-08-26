@@ -3,7 +3,6 @@ import playlistModel from "../models/playlist.models.js";
 import trackModel from "../models/track.models.js";
 import { normalizeTrack } from "../services/matching/normalization.js";
 
-
 // /api/sync/matchplaylistTrack/:playlistId
 // This takes the playlist ID and normalize the tracks of it. 
 // Playlist and tracks should be fetched first to execute this. 
