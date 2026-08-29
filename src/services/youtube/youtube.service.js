@@ -14,7 +14,10 @@ export async function getYouTubeClient(userId) {
     if (!account) {
         throw new Error("YouTube account is not connected.");
     }
-    console.error("YouTube search error:", error.stack || error);
+
+    if (!account.accessToken) {
+        throw new Error("YouTube access token is missing.");
+    }
 
     const oauth2Client = new google.auth.OAuth2(
         process.env.GOOGLE_CLIENT_ID,
@@ -23,14 +26,14 @@ export async function getYouTubeClient(userId) {
     );
 
     oauth2Client.setCredentials({
-    access_token: decrypt(account.accessToken),
-    refresh_token: account.refreshToken
-        ? decrypt(account.refreshToken)
-        : undefined,
-    expiry_date: account.tokenExpiresAt
-        ? new Date(account.tokenExpiresAt).getTime()
-        : undefined
-});
+        access_token: decrypt(account.accessToken),
+        refresh_token: account.refreshToken
+            ? decrypt(account.refreshToken)
+            : undefined,
+        expiry_date: account.tokenExpiresAt
+            ? new Date(account.tokenExpiresAt).getTime()
+            : undefined
+    });
 
     oauth2Client.on("tokens", async (tokens) => {
         try {
