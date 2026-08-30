@@ -168,7 +168,7 @@ export async function spotifyCallback(req, res) {
 // Check if user has connected Spotify account
 export async function getSpotifyStatus(req, res) {
     try {
-        const userId = req.user?._id;
+        const userId = req.user?._id?.toString();
         if (!userId) {
             return res.status(401).json({ message: "Authentication required" });
         }
@@ -192,6 +192,35 @@ export async function getSpotifyStatus(req, res) {
     } catch (error) {
         console.error("Spotify status error:", error);
         return res.status(500).json({ message: "Error checking Spotify status" });
+    }
+}
+
+export async function getYouTubeStatus(req, res) {
+    try {
+        const userId = req.user?._id?.toString();
+        if (!userId) {
+            return res.status(401).json({ message: "Authentication required" });
+        }
+
+        const account = await connectedAccount.findOne({ userId, provider: "youtube" });
+        if (!account || !account.accessToken || account.status !== "connected") {
+            return res.status(200).json({ connected: false });
+        }
+
+        return res.status(200).json({
+            connected: true,
+            account: {
+                providerAccountId: account.providerAccountId,
+                providerDisplayName: account.providerDisplayName,
+                providerEmail: account.providerEmail,
+                providerAvatarUrl: account.providerAvatarUrl,
+                status: account.status,
+                tokenExpiresAt: account.tokenExpiresAt
+            }
+        });
+    } catch (error) {
+        console.error("YouTube status error:", error);
+        return res.status(500).json({ message: "Error checking YouTube status" });
     }
 }
 
@@ -324,7 +353,7 @@ export async function youtubeOAuthCallback(req, res) {
             });
         }
 
-        const userId = state;
+        const userId = String(state);
 
         if (!userId) {
             return res.status(400).json({
@@ -434,6 +463,10 @@ export async function youtubeOAuthCallback(req, res) {
             }
         );
 
+        if (req.headers.accept && req.headers.accept.includes("text/html")) {
+            return res.redirect("/?youtube=connected");
+        }
+
         return res.status(200).json({
             message: "YouTube connected successfully",
 
@@ -469,7 +502,7 @@ export async function youtubeOAuthCallback(req, res) {
 
 export default async function getYouTubeMe(req, res) {
     try {
-        const userId = req.user._id;
+        const userId = req.user._id?.toString();
 
         const youtube = await getYouTubeClient(userId);
 
