@@ -4,77 +4,90 @@ import jwt from "jsonwebtoken";
 
 const isProduction = process.env.NODE_ENV === "production";
 
+function generateTokens(userId) {
+    const accessToken = jwt.sign(
+        { id: userId },
+        process.env.JWT_SECRET,
+        { expiresIn: "15m" }
+    );
+
+    const refreshToken = jwt.sign(
+        { id: userId },
+        process.env.JWT_SECRET,
+        { expiresIn: "7d" }
+    );
+
+    return {
+        accessToken,
+        refreshToken
+    };
+}
+
+function setAuthCookies(res, accessToken, refreshToken) {
+    res.cookie("accessToken", accessToken, {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: "lax",
+        maxAge: 15 * 60 * 1000
+    });
+
+    res.cookie("refreshToken", refreshToken, {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: "lax",
+        maxAge: 7 * 24 * 60 * 60 * 1000
+    });
+}
+
 export async function register(req, res) {
     try {
         const { email, password, name } = req.body;
 
-        if (!email || !password) {
+        if (!email || !password || !name) {
             return res.status(400).json({
-                message: "Email and password are required"
+                message: "Name, email and password are required"
             });
         }
 
         const isAlreadyRegistered = await userModel.findOne({ email });
 
-        // If email already exists
         if (isAlreadyRegistered) {
             return res.status(409).json({
                 message: "User with this email already exists"
             });
         }
 
-        // Hash password
         const hashedPassword = crypto
             .createHash("sha256")
             .update(password)
             .digest("hex");
 
-        // Create new user
         const user = await userModel.create({
             email,
             name,
             passwordHash: hashedPassword
         });
 
-        // Generate JWT
-        const accessToken = jwt.sign(
-            { id: user._id },
-            process.env.JWT_SECRET,
-            { expiresIn: "15m" }
-        );
-        const refreshToken = jwt.sign(
-            { id: user._id },
-            process.env.JWT_SECRET,
-            { expiresIn: "7d" }
-        );
+        const { accessToken, refreshToken } =
+            generateTokens(user._id);
 
-        // Set cookies (secure: false for local HTTP dev, sameSite: 'lax')
-        res.cookie("accessToken", accessToken, {
-            httpOnly: true,
-            secure: isProduction,
-            sameSite: "lax",
-            maxAge: 15 * 60 * 1000
-        });
-        res.cookie("refreshToken", refreshToken, {
-            httpOnly: true,
-            secure: isProduction,
-            sameSite: "lax",
-            maxAge: 7 * 24 * 60 * 60 * 1000
-        });
+        setAuthCookies(res, accessToken, refreshToken);
 
         return res.status(201).json({
-            message: "User created successfully.",
+            success: true,
+            message: "User created successfully",
             user: {
                 id: user._id,
                 email: user.email,
                 name: user.name
-            },
-            accessToken,
+            }
         });
 
     } catch (error) {
-        console.error(error);
+        console.error("Register error:", error);
+
         return res.status(500).json({
+            success: false,
             message: "Internal server error"
         });
     }
@@ -90,7 +103,9 @@ export async function login(req, res) {
             });
         }
 
-        const user = await userModel.findOne({ email }).select("+passwordHash");
+        const user = await userModel
+            .findOne({ email })
+            .select("+passwordHash");
 
         if (!user) {
             return res.status(401).json({
@@ -109,50 +124,36 @@ export async function login(req, res) {
             });
         }
 
-        // Generate JWT
-        const accessToken = jwt.sign(
-            { id: user._id },
-            process.env.JWT_SECRET,
-            { expiresIn: "15m" }
-        );
-        const refreshToken = jwt.sign(
-            { id: user._id },
-            process.env.JWT_SECRET,
-            { expiresIn: "7d" }
-        );
+        if (user.isActive === false) {
+            return res.status(403).json({
+                message: "User account has been deactivated"
+            });
+        }
 
-        // Set accessToken & refreshToken cookies
-        res.cookie("accessToken", accessToken, {
-            httpOnly: true,
-            secure: isProduction,
-            sameSite: "lax",
-            maxAge: 15 * 60 * 1000
-        });
-        res.cookie("refreshToken", refreshToken, {
-            httpOnly: true,
-            secure: isProduction,
-            sameSite: "lax",
-            maxAge: 7 * 24 * 60 * 60 * 1000
-        });
+        const { accessToken, refreshToken } =
+            generateTokens(user._id);
+
+        setAuthCookies(res, accessToken, refreshToken);
 
         return res.status(200).json({
+            success: true,
             message: "Login successful",
             user: {
                 id: user._id,
                 email: user.email,
                 name: user.name
-            },
-            accessToken
+            }
         });
 
     } catch (error) {
         console.error("Login error:", error);
+
         return res.status(500).json({
+            success: false,
             message: "Internal server error"
         });
     }
 }
-
 export async function getMe(req, res) {
     try {
         // req.user is set by authenticate middleware

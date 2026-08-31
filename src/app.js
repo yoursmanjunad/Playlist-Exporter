@@ -23,12 +23,12 @@ console.log("dotenv result:", result);
 console.log("Current directory:", process.cwd());
 console.log("JWT_SECRET:", process.env.JWT_SECRET);
 
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 5000;
 
 const app = express();
 
 app.use(cors({
-    origin: true,
+    origin: "http://localhost:3000",
     credentials: true
 }));
 app.use(express.json());

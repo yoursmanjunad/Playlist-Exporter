@@ -1,0 +1,293 @@
+openapi: 3.1.0
+info:
+  title: Ship Your Playlists API
+  version: 1.0.0
+  description: |
+    API for importing a user's Spotify playlists, finding YouTube matches for
+    their tracks, and creating a YouTube playlist from the saved matches.
+servers:
+  - url: http://localhost:3000
+    description: Local development
+tags:
+  - name: Authentication
+  - name: Connections
+  - name: Playlists
+  - name: Matching
+  - name: Transfer
+paths:
+  /api/auth/register:
+    post:
+      tags: [Authentication]
+      summary: Create a user and start a session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        '201':
+          description: User created. Access and refresh cookies are set.
+          headers: { Set-Cookie: { schema: { type: string } } }
+          content: { application/json: { schema: { $ref: '#/components/schemas/AuthResponse' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '409': { description: Email is already registered, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+  /api/auth/login:
+    post:
+      tags: [Authentication]
+      summary: Sign in and start a session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Signed in. Access and refresh cookies are set.
+          headers: { Set-Cookie: { schema: { type: string } } }
+          content: { application/json: { schema: { $ref: '#/components/schemas/AuthResponse' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/auth/get-me:
+    get:
+      tags: [Authentication]
+      summary: Get the current user
+      security: [{ bearerAuth: [] }, { cookieAuth: [] }]
+      responses:
+        '200': { description: Current user, content: { application/json: { schema: { $ref: '#/components/schemas/CurrentUserResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Deactivated' }
+  /api/auth/refresh-token:
+    get:
+      tags: [Authentication]
+      summary: Refresh session tokens
+      description: Requires the `refreshToken` cookie. Replaces both session cookies.
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: Token refreshed, content: { application/json: { schema: { $ref: '#/components/schemas/RefreshResponse' } } } }
+        '401': { description: Refresh token is missing, invalid, or expired, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+  /api/auth/logout:
+    post:
+      tags: [Authentication]
+      summary: End the current session
+      responses:
+        '200': { description: Cookies cleared, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+  /api/oauth/spotify-login:
+    get:
+      tags: [Connections]
+      summary: Begin Spotify OAuth connection
+      security: [{ bearerAuth: [] }, { cookieAuth: [] }]
+      responses:
+        '302': { description: Redirect to Spotify authorization }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/oauth/spotify-callback:
+    get:
+      tags: [Connections]
+      summary: Spotify OAuth callback
+      description: Public redirect target. The `state` value carries the initiating user ID.
+      parameters:
+        - { name: code, in: query, required: true, schema: { type: string } }
+        - { name: state, in: query, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Connected account when JSON is requested, content: { application/json: { schema: { $ref: '#/components/schemas/ConnectedAccountResponse' } } } }
+        '302': { description: Browser clients are redirected to `/?spotify=connected` }
+        '400': { description: OAuth code exchange failed, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+  /api/oauth/spotify-refresh-token:
+    get:
+      tags: [Connections]
+      summary: Refresh the saved Spotify access token
+      security: [{ bearerAuth: [] }, { cookieAuth: [] }]
+      responses:
+        '200': { description: Spotify token refreshed, content: { application/json: { schema: { $ref: '#/components/schemas/SpotifyRefreshResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: No saved Spotify refresh token, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+  /api/oauth/spotify-status:
+    get:
+      tags: [Connections]
+      summary: Check Spotify connection status
+      security: [{ bearerAuth: [] }, { cookieAuth: [] }]
+      responses:
+        '200': { description: Connection status, content: { application/json: { schema: { $ref: '#/components/schemas/ConnectionStatus' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/oauth/youtube-login:
+    get:
+      tags: [Connections]
+      summary: Begin YouTube OAuth connection
+      security: [{ bearerAuth: [] }, { cookieAuth: [] }]
+      responses:
+        '302': { description: Redirect to Google authorization }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/oauth/youtube-callback:
+    get:
+      tags: [Connections]
+      summary: YouTube OAuth callback
+      parameters:
+        - { name: code, in: query, required: true, schema: { type: string } }
+        - { name: state, in: query, required: true, schema: { type: string } }
+        - { name: error, in: query, required: false, schema: { type: string } }
+      responses:
+        '200': { description: Connected channel, content: { application/json: { schema: { $ref: '#/components/schemas/YouTubeChannelResponse' } } } }
+        '302': { description: Browser clients are redirected to `/?youtube=connected` }
+        '400': { description: OAuth was declined or malformed, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+  /api/oauth/youtube-status:
+    get:
+      tags: [Connections]
+      summary: Check YouTube connection status
+      security: [{ bearerAuth: [] }, { cookieAuth: [] }]
+      responses:
+        '200': { description: Connection status, content: { application/json: { schema: { $ref: '#/components/schemas/ConnectionStatus' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/oauth/youtube/getme:
+    get:
+      tags: [Connections]
+      summary: Get the connected YouTube channel
+      security: [{ bearerAuth: [] }, { cookieAuth: [] }]
+      responses:
+        '200': { description: Channel details, content: { application/json: { schema: { $ref: '#/components/schemas/YouTubeChannelResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: No YouTube channel found, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+  /api/playlist/spotify:
+    get:
+      tags: [Playlists]
+      summary: Fetch and cache the user's Spotify playlists
+      description: A Spotify account must be connected. The response contains the database playlist records after upsert.
+      security: [{ bearerAuth: [] }, { cookieAuth: [] }]
+      responses:
+        '200': { description: Playlists fetched, content: { application/json: { schema: { $ref: '#/components/schemas/PlaylistListResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: Spotify is not connected, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+  /api/playlist/spotify/{playlistId}:
+    get:
+      tags: [Playlists]
+      summary: Fetch and cache tracks for a Spotify playlist
+      description: Call `GET /api/playlist/spotify` first. This endpoint only accepts the Spotify playlist ID, not the database ID.
+      security: [{ bearerAuth: [] }, { cookieAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/PlaylistId' }]
+      responses:
+        '200': { description: Tracks fetched, content: { application/json: { schema: { $ref: '#/components/schemas/TrackListResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: Cached playlist or Spotify connection is missing, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+  /api/playlist/{playlistId}:
+    get:
+      deprecated: true
+      tags: [Playlists]
+      summary: Legacy alias for fetching Spotify playlist tracks
+      description: Same behavior as `/api/playlist/spotify/{playlistId}`.
+      security: [{ bearerAuth: [] }, { cookieAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/PlaylistId' }]
+      responses:
+        '200': { description: Tracks fetched, content: { application/json: { schema: { $ref: '#/components/schemas/TrackListResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: Cached playlist or Spotify connection is missing }
+  /api/sync/matchplaylistTrack/{playlistId}:
+    get: &matchPreview
+      tags: [Matching]
+      summary: Normalize tracks and return raw YouTube search candidates
+      description: Does not save match records. `playlistId` may be either the cached database ID or Spotify playlist ID.
+      security: [{ bearerAuth: [] }, { cookieAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/PlaylistId' }]
+      responses:
+        '200': { description: Candidates returned, content: { application/json: { schema: { $ref: '#/components/schemas/RawMatchResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: Playlist or imported tracks are missing }
+    post: *matchPreview
+  /api/sync/preview-matches/{playlistId}:
+    get:
+      tags: [Matching]
+      summary: Preview scored YouTube matches
+      description: Does not persist results. Up to five candidates are searched for each track and the best result is scored 0–100.
+      security: [{ bearerAuth: [] }, { cookieAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/PlaylistId' }]
+      responses:
+        '200': { description: Preview returned, content: { application/json: { schema: { $ref: '#/components/schemas/PreviewResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: Playlist or imported tracks are missing }
+  /api/sync/generate-matches/{playlistId}:
+    post:
+      tags: [Matching]
+      summary: Generate and save YouTube matches
+      description: Replaces all existing saved matches for the playlist. Import tracks first.
+      security: [{ bearerAuth: [] }, { cookieAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/PlaylistId' }]
+      responses:
+        '200': { description: Matches generated and persisted, content: { application/json: { schema: { $ref: '#/components/schemas/GenerateMatchesResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: Playlist or imported tracks are missing }
+  /api/sync/matches/{playlistId}:
+    get:
+      tags: [Matching]
+      summary: Get saved matches for a playlist
+      security: [{ bearerAuth: [] }, { cookieAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/PlaylistId' }]
+      responses:
+        '200': { description: Saved matches ordered by track position, content: { application/json: { schema: { $ref: '#/components/schemas/SavedMatchesResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: Playlist is missing }
+  /api/sync/create-youtube-playlist/{playlistId}:
+    post: &transfer
+      tags: [Transfer]
+      summary: Create a YouTube playlist and add every saved matched video
+      description: Requires a connected YouTube account and saved matches from `generate-matches`. Only matches with a video ID are transferred.
+      security: [{ bearerAuth: [] }, { cookieAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/PlaylistId' }]
+      responses:
+        '201': { description: Destination playlist created, content: { application/json: { schema: { $ref: '#/components/schemas/TransferResponse' } } } }
+        '400': { description: No saved matches available }
+        '401': { description: Request is unauthenticated or YouTube is not connected }
+        '404': { description: Spotify playlist is missing }
+  /api/sync/transfer-playlist/{playlistId}:
+    post:
+      <<: *transfer
+      deprecated: true
+      summary: Legacy alias for creating a YouTube playlist
+  /api/test-search:
+    get:
+      tags: [Connections]
+      summary: Run the built-in YouTube search diagnostic
+      description: Development diagnostic. It searches a fixed query; callers cannot supply a query.
+      security: [{ bearerAuth: [] }, { cookieAuth: [] }]
+      responses:
+        '200': { description: Search results, content: { application/json: { schema: { type: object, properties: { message: { type: string }, query: { type: string }, count: { type: integer }, results: { type: array, items: {} } } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: YouTube is not connected }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+    cookieAuth: { type: apiKey, in: cookie, name: accessToken }
+  parameters:
+    PlaylistId:
+      name: playlistId
+      in: path
+      required: true
+      description: Cached MongoDB playlist ID or Spotify playlist ID, except the playlist-track routes, which require a Spotify ID.
+      schema: { type: string, example: 37i9dQZF1DXcBWIGoYBM5M }
+  responses:
+    ValidationError: { description: Required input is missing, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+    Unauthorized: { description: Authentication is missing, invalid, or expired, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+    Deactivated: { description: Account is deactivated, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+  schemas:
+    Message: { type: object, required: [message], properties: { message: { type: string } } }
+    RegisterRequest: { type: object, required: [email, password], properties: { name: { type: string, example: Ada Lovelace }, email: { type: string, format: email, example: ada@example.com }, password: { type: string, format: password, example: correct-horse-battery-staple } } }
+    LoginRequest: { type: object, required: [email, password], properties: { email: { type: string, format: email }, password: { type: string, format: password } } }
+    User: { type: object, required: [id, email], properties: { id: { type: string }, email: { type: string, format: email }, name: { type: [string, 'null'] } } }
+    AuthResponse: { type: object, required: [message, user, accessToken], properties: { message: { type: string }, user: { $ref: '#/components/schemas/User' }, accessToken: { type: string, description: JWT; also returned as an HttpOnly cookie } } }
+    CurrentUserResponse: { type: object, properties: { message: { type: string }, user: { allOf: [{ $ref: '#/components/schemas/User' }, { type: object, properties: { subscription: { type: object }, isActive: { type: boolean } } }] } } }
+    RefreshResponse: { type: object, properties: { message: { type: string }, accessToken: { type: string } } }
+    ConnectedAccount: { type: object, properties: { providerAccountId: { type: string }, providerDisplayName: { type: [string, 'null'] }, providerEmail: { type: [string, 'null'], format: email }, providerAvatarUrl: { type: [string, 'null'], format: uri }, status: { type: string, enum: [connected, expired, revoked, error] }, tokenExpiresAt: { type: string, format: date-time } } }
+    ConnectedAccountResponse: { type: object, properties: { message: { type: string }, account: { allOf: [{ $ref: '#/components/schemas/ConnectedAccount' }, { type: object, properties: { id: { type: string }, userId: { type: string }, provider: { const: spotify } } }] } } }
+    ConnectionStatus: { type: object, required: [connected], properties: { connected: { type: boolean }, account: { $ref: '#/components/schemas/ConnectedAccount' } } }
+    SpotifyRefreshResponse: { type: object, properties: { message: { type: string }, tokenExpiresAt: { type: string, format: date-time } } }
+    YouTubeChannel: { type: object, properties: { channelId: { type: string }, name: { type: string }, description: { type: [string, 'null'] }, avatarUrl: { type: [string, 'null'], format: uri }, country: { type: [string, 'null'] }, subscribers: { type: [string, 'null'] }, videos: { type: [string, 'null'] }, views: { type: [string, 'null'] }, uploadsPlaylistId: { type: [string, 'null'] } } }
+    YouTubeChannelResponse: { type: object, properties: { message: { type: string }, youtube: { $ref: '#/components/schemas/YouTubeChannel' } } }
+    Playlist: { type: object, properties: { _id: { type: string }, userId: { type: string }, provider: { type: string, enum: [spotify, youtube] }, providerPlaylistId: { type: string }, name: { type: string }, description: { type: [string, 'null'] }, coverImageUrl: { type: [string, 'null'], format: uri }, ownerDisplayName: { type: [string, 'null'] }, isPublic: { type: boolean }, trackCount: { type: integer }, selectedForTransfer: { type: boolean } } }
+    PlaylistListResponse: { type: object, properties: { message: { type: string }, count: { type: integer }, playlists: { type: array, items: { $ref: '#/components/schemas/Playlist' } } } }
+    Track: { type: object, properties: { playlistId: { type: string }, userId: { type: string }, provider: { const: spotify }, providerTrackId: { type: string }, title: { type: string }, artists: { type: array, items: { type: string } }, album: { type: [string, 'null'] }, albumArtUrl: { type: [string, 'null'], format: uri }, durationMs: { type: [integer, 'null'] }, isrc: { type: [string, 'null'] }, position: { type: integer, minimum: 0 }, selectedForTransfer: { type: boolean } } }
+    TrackListResponse: { type: object, properties: { message: { type: string }, playlistId: { type: string }, spotifyPlaylistId: { type: string }, playlistName: { type: string }, count: { type: integer }, tracks: { type: array, items: { $ref: '#/components/schemas/Track' } } } }
+    NormalizedTrack: { type: object, properties: { title: { type: string }, artists: { type: array, items: { type: string } } } }
+    YouTubeCandidate: { type: object, properties: { videoId: { type: string }, title: { type: string }, channelTitle: { type: string }, thumbnail: { type: [string, 'null'], format: uri }, url: { type: string, format: uri }, score: { type: integer, minimum: 0, maximum: 100 }, breakdown: { type: object, additionalProperties: true } } }
+    MatchTrack: { type: object, properties: { id: { type: string }, name: { type: string }, artists: { type: array, items: { type: string } }, position: { type: integer } } }
+    RawMatchResponse: { type: object, properties: { message: { type: string }, playlist: { type: object }, count: { type: integer }, tracks: { type: array, items: { type: object, properties: { trackId: { type: string }, spotify: { type: object }, normalized: { $ref: '#/components/schemas/NormalizedTrack' }, searchQuery: { type: string }, youtubeResults: { type: array, items: { $ref: '#/components/schemas/YouTubeCandidate' } } } } } } }
+    MatchResult: { type: object, properties: { matchId: { type: string }, track: { $ref: '#/components/schemas/MatchTrack' }, normalized: { $ref: '#/components/schemas/NormalizedTrack' }, searchQuery: { type: string }, bestMatch: { anyOf: [{ $ref: '#/components/schemas/YouTubeCandidate' }, { type: 'null' }] }, alternatives: { type: array, items: { $ref: '#/components/schemas/YouTubeCandidate' } }, status: { type: string, enum: [matched, no_match, error] }, error: { type: [string, 'null'] } } }
+    PreviewResponse: { type: object, properties: { success: { const: true }, message: { type: string }, playlist: { type: object, properties: { id: { type: string }, name: { type: string }, totalTracks: { type: integer } } }, results: { type: array, items: { $ref: '#/components/schemas/MatchResult' } } } }
+    GenerateMatchesResponse: { type: object, properties: { success: { const: true }, message: { type: string }, playlist: { type: object }, summary: { type: object, properties: { total: { type: integer }, matched: { type: integer }, noMatch: { type: integer }, errors: { type: integer } } }, results: { type: array, items: { $ref: '#/components/schemas/MatchResult' } } } }
+    SavedMatchesResponse: { type: object, properties: { success: { const: true }, playlist: { type: object }, totalMatches: { type: integer }, matches: { type: array, items: { $ref: '#/components/schemas/MatchResult' } } } }
+    TransferResponse: { type: object, properties: { success: { const: true }, message: { type: string }, spotifyPlaylist: { type: object, properties: { id: { type: string }, name: { type: string } } }, youtubePlaylist: { type: object, properties: { id: { type: string }, name: { type: string }, description: { type: string }, url: { type: string, format: uri } } }, totalMatches: { type: integer }, successfullyTransferred: { type: integer }, failed: { type: integer }, transferredTracks: { type: array, items: { type: object } }, failedTracks: { type: array, items: { type: object } } } }
