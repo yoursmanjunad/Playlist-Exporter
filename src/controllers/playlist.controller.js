@@ -46,6 +46,32 @@ async function getValidSpotifyAccessToken(account) {
     return decrypt(account.accessToken);
 }
 
+// Returns playlists previously imported from Spotify for the authenticated user.
+// This keeps page loads local and leaves the Spotify API request as an explicit action.
+export async function getSavedSpotifyPlaylists(req, res) {
+    try {
+        const playlists = await playlistModel
+            .find({
+                userId: req.user._id,
+                provider: "spotify"
+            })
+            .sort({ updatedAt: -1 })
+            .lean();
+
+        return res.status(200).json({
+            message: "Saved Spotify playlists fetched successfully",
+            count: playlists.length,
+            playlists
+        });
+    } catch (error) {
+        console.error("Get saved Spotify playlists error:", error);
+
+        return res.status(500).json({
+            message: "Failed to fetch saved Spotify playlists"
+        });
+    }
+}
+
 // Pulls all the playlists of the user - SPOTIFY
 export async function getSpotifyPlaylists(req, res) {
     try {
@@ -67,26 +93,32 @@ export async function getSpotifyPlaylists(req, res) {
 
         const accessToken = await getValidSpotifyAccessToken(account);
 
-        const response = await fetch(
-            "https://api.spotify.com/v1/me/playlists",
-            {
+        const playlists = [];
+        let nextUrl = new URL("https://api.spotify.com/v1/me/playlists");
+        nextUrl.searchParams.set("limit", "50");
+
+        while (nextUrl) {
+            const response = await fetch(nextUrl, {
                 headers: {
                     Authorization: `Bearer ${accessToken}`
                 }
-            }
-        );
-
-        const data = await response.json();
-
-        if (!response.ok) {
-            return res.status(response.status).json({
-                message: "Failed to fetch Spotify playlists",
-                error: data
             });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                return res.status(response.status).json({
+                    message: "Failed to fetch Spotify playlists",
+                    error: data
+                });
+            }
+
+            playlists.push(...(data.items || []));
+            nextUrl = data.next ? new URL(data.next) : null;
         }
 
         // Save every fetched playlist to the database matching PlaylistSchema attributes
-        const savePromises = (data.items || []).map((playlist) => {
+        const savePromises = playlists.map((playlist) => {
             return playlistModel.findOneAndUpdate(
                 {
                     userId,
@@ -102,6 +134,7 @@ export async function getSpotifyPlaylists(req, res) {
                     coverImageUrl: playlist.images?.[0]?.url || null,
                     ownerDisplayName: playlist.owner?.display_name || playlist.owner?.id || null,
                     isPublic: playlist.public ?? false,
+                    isCollaborative: playlist.collaborative ?? false,
                     trackCount: playlist.tracks?.total ?? playlist.items?.total ?? 0,
                     selectedForTransfer: false,
                     importedAt: new Date(),
@@ -140,16 +173,11 @@ export async function getSpotifyPlaylistTracks(req, res) {
             });
         }
 
-        console.log("USER ID:", userId);
-        console.log("SPOTIFY PLAYLIST ID: ", playlistId);
-
         const playlist = await playlistModel.findOne({
             userId,
             provider: "spotify",
             providerPlaylistId: playlistId
         });
-
-        console.log("MONGO PLAYLIST: ", playlist);
 
         if (!playlist) {
             return res.status(404).json({
@@ -171,37 +199,69 @@ export async function getSpotifyPlaylistTracks(req, res) {
             });
         }
 
-        const accessToken = await getValidSpotifyAccessToken(account);
+        const grantedScopes = new Set(account.scope || []);
+        const requiredScope = playlist.isCollaborative
+            ? "playlist-read-collaborative"
+            : "playlist-read-private";
 
-        const response = await fetch(
-            `https://api.spotify.com/v1/playlists/${playlistId}/items`,
-            {
-                headers: {
-                    Authorization: `Bearer ${accessToken}`
+        if (!grantedScopes.has(requiredScope)) {
+            return res.status(403).json({
+                message: "Spotify authorization is missing playlist read permissions. Reconnect Spotify and approve playlist access.",
+                missingScopes: [requiredScope],
+                playlist: {
+                    id: playlist.providerPlaylistId,
+                    name: playlist.name,
+                    owner: playlist.ownerDisplayName,
+                    collaborative: playlist.isCollaborative
                 }
-            }
-        );
-
-        const data = await response.json();
-
-        if (!response.ok) {
-            console.error(
-                "Spotify API error response status:",
-                response.status
-            );
-
-            console.error(
-                "Spotify API error payload:",
-                JSON.stringify(data, null, 2)
-            );
-
-            return res.status(response.status).json({
-                message: "Failed to fetch playlist tracks.",
-                error: data
             });
         }
 
-        const rawItems = data.items || [];
+        const accessToken = await getValidSpotifyAccessToken(account);
+
+        const rawItems = [];
+        let nextUrl = new URL(
+            `https://api.spotify.com/v1/playlists/${playlistId}/items`
+        );
+        nextUrl.searchParams.set("limit", "100");
+
+        while (nextUrl) {
+            const response = await fetch(nextUrl, {
+                headers: {
+                    Authorization: `Bearer ${accessToken}`
+                }
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                console.error(
+                    "Spotify API error response status:",
+                    response.status
+                );
+
+                console.error(
+                    "Spotify API error payload:",
+                    JSON.stringify(data, null, 2)
+                );
+
+                return res.status(response.status).json({
+                    message: response.status === 403
+                        ? "Spotify denied access to this playlist. It may be private, collaborative, unavailable in your market, or no longer accessible to this account."
+                        : "Failed to fetch playlist tracks.",
+                    error: data,
+                    playlist: {
+                        id: playlist.providerPlaylistId,
+                        name: playlist.name,
+                        owner: playlist.ownerDisplayName,
+                        collaborative: playlist.isCollaborative
+                    }
+                });
+            }
+
+            rawItems.push(...(data.items || []));
+            nextUrl = data.next ? new URL(data.next) : null;
+        }
 
         const tracks = rawItems
             .map((item) => item.track || item.item)

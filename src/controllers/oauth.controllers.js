@@ -2,6 +2,15 @@ import connectedAccount from "../models/connectedAccount.models.js";
 import { encrypt, decrypt } from "../utils/encryption.js";
 import { getYouTubeClient } from "../services/youtube/youtube.service.js";
 
+function getFrontendCallbackUrl(provider) {
+    const url = new URL(
+        process.env.FRONTEND_URL || "http://localhost:3000/home"
+    );
+
+    url.searchParams.set("connected", provider);
+    return url.toString();
+}
+
 // Handles Spotify Login & initiates OAuth redirect
 export async function spotifyLogin(req, res) {
     try {
@@ -22,7 +31,8 @@ export async function spotifyLogin(req, res) {
             response_type: "code",
             redirect_uri: process.env.SPOTIFY_REDIRECT_URI,
             scope: scopes.join(" "),
-            state
+            state,
+            show_dialog: "true"
         });
 
         const authorizationUrl = `https://accounts.spotify.com/authorize?${params.toString()}`;
@@ -138,7 +148,7 @@ export async function spotifyCallback(req, res) {
 
         // If request originates from browser OAuth redirect flow, redirect back to frontend
         if (req.headers.accept && req.headers.accept.includes("text/html")) {
-            return res.redirect("/?spotify=connected");
+            return res.redirect(getFrontendCallbackUrl("spotify"));
         }
 
         return res.status(200).json({
@@ -151,6 +161,7 @@ export async function spotifyCallback(req, res) {
                 providerDisplayName: account.providerDisplayName,
                 providerEmail: account.providerEmail,
                 providerAvatarUrl: account.providerAvatarUrl,
+                scopes: account.scope || [],
                 status: account.status,
                 tokenExpiresAt: account.tokenExpiresAt
             }
@@ -464,7 +475,7 @@ export async function youtubeOAuthCallback(req, res) {
         );
 
         if (req.headers.accept && req.headers.accept.includes("text/html")) {
-            return res.redirect("/?youtube=connected");
+            return res.redirect(getFrontendCallbackUrl("youtube"));
         }
 
         return res.status(200).json({

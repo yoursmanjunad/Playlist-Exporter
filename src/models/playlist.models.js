@@ -26,6 +26,7 @@ const PlaylistSchema = new Schema(
     coverImageUrl: { type: String }, // Spotify playlist cover / YT thumbnail
     ownerDisplayName: { type: String },
     isPublic: { type: Boolean, default: false },
+    isCollaborative: { type: Boolean, default: false },
 
     trackCount: { type: Number, default: 0 },
 

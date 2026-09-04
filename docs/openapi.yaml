@@ -155,6 +155,15 @@ paths:
         '200': { description: Playlists fetched, content: { application/json: { schema: { $ref: '#/components/schemas/PlaylistListResponse' } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { description: Spotify is not connected, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+  /api/playlist:
+    get:
+      tags: [Playlists]
+      summary: List the user's previously imported Spotify playlists
+      description: Reads cached playlist records only; it does not call Spotify. Use `GET /api/playlist/spotify` to fetch or refresh them.
+      security: [{ bearerAuth: [] }, { cookieAuth: [] }]
+      responses:
+        '200': { description: Cached playlists, content: { application/json: { schema: { $ref: '#/components/schemas/PlaylistListResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
   /api/playlist/spotify/{playlistId}:
     get:
       tags: [Playlists]

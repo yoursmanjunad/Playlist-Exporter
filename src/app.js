@@ -14,14 +14,7 @@ import syncRouter from "./routes/sync.routes.js";
 import { authenticate } from "./middleware/auth.middleware.js";
 import { testYouTubeSearch } from "./services/youtube/youtube.client.js";
 
-const result = dotenv.config({
-    path: ".env",
-    debug: true
-});
-
-console.log("dotenv result:", result);
-console.log("Current directory:", process.cwd());
-console.log("JWT_SECRET:", process.env.JWT_SECRET);
+dotenv.config({ path: ".env" });
 
 const port = process.env.PORT || 5000;
 

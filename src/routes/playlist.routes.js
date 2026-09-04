@@ -1,7 +1,10 @@
 import { Router } from "express";
 import { authenticate } from "../middleware/auth.middleware.js";
-import { getSpotifyPlaylists, getSpotifyPlaylistTracks } from "../controllers/playlist.controller.js";
+import { getSavedSpotifyPlaylists, getSpotifyPlaylists, getSpotifyPlaylistTracks } from "../controllers/playlist.controller.js";
 const playlistRouter = Router();
+
+// GET /api/playlist - Lists playlists previously imported for the current user.
+playlistRouter.get("/", authenticate, getSavedSpotifyPlaylists);
 
 // GET /api/playlist/spotify - Lists the user's playlists.
 playlistRouter.get("/spotify", authenticate, getSpotifyPlaylists);

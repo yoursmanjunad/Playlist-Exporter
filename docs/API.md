@@ -21,9 +21,12 @@ Browser clients must send credentials (`fetch(..., { credentials: 'include' })`)
 
 For sync endpoints, `{playlistId}` accepts the cached MongoDB playlist ID or the Spotify playlist ID. The playlist-track import endpoints only accept a Spotify playlist ID.
 
+`GET /api/playlist` returns the current user's already imported Spotify playlists without contacting Spotify. Use it to render a returning user's playlist list before offering a refresh.
+
 ## Notes
 
 - The OAuth callbacks are public provider redirect targets; do not call them directly except when testing an OAuth response.
+- Set `FRONTEND_URL` in the backend environment to the frontend callback page (for example, `http://localhost:3000/home`). Browser OAuth callbacks redirect there with `?connected=spotify` or `?connected=youtube`.
 - `/api/playlist/{playlistId}` and `/api/sync/transfer-playlist/{playlistId}` remain supported as deprecated aliases.
 - `/api/sync/matchplaylistTrack/{playlistId}` is a diagnostic endpoint that returns raw candidates and does not persist match records.
 - `/api/test-search` is a development diagnostic with a fixed query and should not be used as a general search API.
