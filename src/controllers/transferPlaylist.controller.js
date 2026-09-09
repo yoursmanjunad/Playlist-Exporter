@@ -211,6 +211,24 @@ export async function createYouTubePlaylistFromSpotify(
       }
     }
 
+    await playlistModel.findOneAndUpdate(
+      {
+        userId,
+        provider: "youtube",
+        providerPlaylistId: youtubePlaylist.playlistId,
+      },
+      {
+        userId,
+        provider: "youtube",
+        providerPlaylistId: youtubePlaylist.playlistId,
+        name: youtubePlaylist.title || playlist.name,
+        description: youtubePlaylist.description || playlist.description,
+        createdFromPlaylistId: playlist._id,
+        trackCount: transferredTracks.length,
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+
     return res.status(201).json({
       success: true,
 

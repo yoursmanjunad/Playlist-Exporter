@@ -56,6 +56,42 @@ paths:
         '200': { description: Current user, content: { application/json: { schema: { $ref: '#/components/schemas/CurrentUserResponse' } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Deactivated' }
+  /api/auth/profile:
+    patch:
+      tags: [Authentication]
+      summary: Update the current user's profile
+      description: Update one or more of the user's name, email, and password. Changing the password requires the current password.
+      security: [{ bearerAuth: [] }, { cookieAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateProfileRequest' }
+      responses:
+        '200': { description: Profile updated, content: { application/json: { schema: { $ref: '#/components/schemas/CurrentUserResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { description: Current password is incorrect, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+        '409': { description: Email is already registered, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+  /api/auth/profile/photo:
+    put:
+      tags: [Authentication]
+      summary: Upload the current user's profile photo
+      description: Accepts JPEG, PNG, WebP, or GIF images up to 5 MB in the `photo` multipart field. The saved file is served from the returned `avatarUrl`.
+      security: [{ bearerAuth: [] }, { cookieAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [photo]
+              properties:
+                photo:
+                  type: string
+                  format: binary
+      responses:
+        '200': { description: Profile photo uploaded, content: { application/json: { schema: { $ref: '#/components/schemas/CurrentUserResponse' } } } }
+        '400': { description: Missing, invalid, or oversized image, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
   /api/auth/refresh-token:
     get:
       tags: [Authentication]
@@ -277,9 +313,10 @@ components:
     Message: { type: object, required: [message], properties: { message: { type: string } } }
     RegisterRequest: { type: object, required: [email, password], properties: { name: { type: string, example: Ada Lovelace }, email: { type: string, format: email, example: ada@example.com }, password: { type: string, format: password, example: correct-horse-battery-staple } } }
     LoginRequest: { type: object, required: [email, password], properties: { email: { type: string, format: email }, password: { type: string, format: password } } }
-    User: { type: object, required: [id, email], properties: { id: { type: string }, email: { type: string, format: email }, name: { type: [string, 'null'] } } }
+    User: { type: object, required: [id, email, transferredPlaylists], properties: { id: { type: string }, email: { type: string, format: email }, name: { type: [string, 'null'] }, avatarUrl: { type: [string, 'null'], format: uri }, transferredPlaylists: { type: integer, minimum: 0 }, subscription: { type: object }, isActive: { type: boolean } } }
     AuthResponse: { type: object, required: [message, user, accessToken], properties: { message: { type: string }, user: { $ref: '#/components/schemas/User' }, accessToken: { type: string, description: JWT; also returned as an HttpOnly cookie } } }
     CurrentUserResponse: { type: object, properties: { message: { type: string }, user: { allOf: [{ $ref: '#/components/schemas/User' }, { type: object, properties: { subscription: { type: object }, isActive: { type: boolean } } }] } } }
+    UpdateProfileRequest: { type: object, minProperties: 1, properties: { name: { type: string, minLength: 1 }, email: { type: string, format: email }, currentPassword: { type: string, format: password }, newPassword: { type: string, format: password, minLength: 8 } } }
     RefreshResponse: { type: object, properties: { message: { type: string }, accessToken: { type: string } } }
     ConnectedAccount: { type: object, properties: { providerAccountId: { type: string }, providerDisplayName: { type: [string, 'null'] }, providerEmail: { type: [string, 'null'], format: email }, providerAvatarUrl: { type: [string, 'null'], format: uri }, status: { type: string, enum: [connected, expired, revoked, error] }, tokenExpiresAt: { type: string, format: date-time } } }
     ConnectedAccountResponse: { type: object, properties: { message: { type: string }, account: { allOf: [{ $ref: '#/components/schemas/ConnectedAccount' }, { type: object, properties: { id: { type: string }, userId: { type: string }, provider: { const: spotify } } }] } } }

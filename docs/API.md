@@ -8,6 +8,32 @@ The development server listens on `http://localhost:3000` unless `PORT` is set. 
 
 Browser clients must send credentials (`fetch(..., { credentials: 'include' })`). The authentication middleware can automatically renew an expired access cookie when a valid refresh cookie is available.
 
+## Profile API
+
+All profile endpoints require authentication.
+
+- `GET /api/auth/get-me` returns `user.avatarUrl` and `user.transferredPlaylists`. The transfer count is the number of completed YouTube playlist records created from the user's imported playlists.
+- `PATCH /api/auth/profile` accepts JSON fields `name`, `email`, `currentPassword`, and `newPassword`. Send at least one of `name`, `email`, or `newPassword`. Password changes require the current password and a new password of at least 8 characters. Email addresses are normalized to lowercase.
+- `PUT /api/auth/profile/photo` accepts `multipart/form-data` with an image field named `photo`. JPEG, PNG, WebP, and GIF files are accepted up to 5 MB. The response contains the public relative `avatarUrl`.
+
+Example profile update:
+
+```http
+PATCH /api/auth/profile
+Content-Type: application/json
+Authorization: Bearer <access-token>
+
+{"name":"Ada Lovelace","email":"ada@example.com","currentPassword":"old-password","newPassword":"new-password-123"}
+```
+
+Example photo upload:
+
+```bash
+curl -X PUT http://localhost:5000/api/auth/profile/photo \
+	-H "Authorization: Bearer <access-token>" \
+	-F "photo=@avatar.png"
+```
+
 ## Typical transfer flow
 
 1. `POST /api/auth/register` or `POST /api/auth/login`.
