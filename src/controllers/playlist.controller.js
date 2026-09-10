@@ -1,7 +1,11 @@
 import connectedAccount from "../models/connectedAccount.models.js";
 import playlistModel from "../models/playlist.models.js";
 import trackModel from "../models/track.models.js"
+import playlistMatchModel from "../models/playlistMatch.models.js";
 import { decrypt, encrypt } from "../utils/encryption.js";
+import { deleteKey, getDeviceId, getJson, getPlaylistCacheKey, setJson } from "../services/cache/redis.service.js";
+
+const PLAYLIST_CACHE_TTL_SECONDS = 300;
 
 /**
  * Helper function to ensure we always have an active Spotify access token.
@@ -50,6 +54,15 @@ async function getValidSpotifyAccessToken(account) {
 // This keeps page loads local and leaves the Spotify API request as an explicit action.
 export async function getSavedSpotifyPlaylists(req, res) {
     try {
+        const cacheKey = getPlaylistCacheKey(req.user._id.toString(), getDeviceId(req));
+        const cachedResponse = await getJson(cacheKey);
+        if (cachedResponse) {
+            return res.status(200).json({
+                ...cachedResponse,
+                cache: "redis"
+            });
+        }
+
         const playlists = await playlistModel
             .find({
                 userId: req.user._id,
@@ -58,11 +71,14 @@ export async function getSavedSpotifyPlaylists(req, res) {
             .sort({ updatedAt: -1 })
             .lean();
 
-        return res.status(200).json({
+        const response = {
             message: "Saved Spotify playlists fetched successfully",
             count: playlists.length,
             playlists
-        });
+        };
+        await setJson(cacheKey, response, PLAYLIST_CACHE_TTL_SECONDS);
+
+        return res.status(200).json({ ...response, cache: "database" });
     } catch (error) {
         console.error("Get saved Spotify playlists error:", error);
 
@@ -70,6 +86,64 @@ export async function getSavedSpotifyPlaylists(req, res) {
             message: "Failed to fetch saved Spotify playlists"
         });
     }
+}
+
+export async function deleteSavedSpotifyPlaylist(req, res) {
+    try {
+        const { playlistId } = req.params;
+        if (!playlistId) {
+            return res.status(400).json({ message: "Playlist ID is required" });
+        }
+
+        const playlistQuery = {
+            userId: req.user._id,
+            provider: "spotify",
+            $or: [{ providerPlaylistId: playlistId }]
+        };
+
+        if (playlistId.match(/^[0-9a-fA-F]{24}$/)) {
+            playlistQuery.$or.push({ _id: playlistId });
+        }
+
+        const playlist = await playlistModel.findOne(playlistQuery).select("_id");
+        if (!playlist) {
+            return res.status(404).json({ message: "Saved Spotify playlist not found" });
+        }
+
+        const destinationPlaylists = await playlistModel
+            .find({ userId: req.user._id, createdFromPlaylistId: playlist._id })
+            .select("_id")
+            .lean();
+        const relatedPlaylistIds = [
+            playlist._id,
+            ...destinationPlaylists.map((destination) => destination._id)
+        ];
+
+        await Promise.all([
+            trackModel.deleteMany({ userId: req.user._id, playlistId: playlist._id }),
+            playlistMatchModel.deleteMany({ userId: req.user._id, playlistId: playlist._id }),
+            playlistModel.deleteMany({
+                userId: req.user._id,
+                _id: { $in: relatedPlaylistIds }
+            })
+        ]);
+
+        await deletePlaylistCacheForDevice(req);
+
+        return res.status(200).json({
+            message: "Saved Spotify playlist deleted successfully",
+            deletedPlaylistId: playlist._id,
+            deletedTransferredPlaylists: destinationPlaylists.length
+        });
+    } catch (error) {
+        console.error("Delete saved Spotify playlist error:", error);
+        return res.status(500).json({ message: "Failed to delete saved Spotify playlist" });
+    }
+}
+
+async function deletePlaylistCacheForDevice(req) {
+    const cacheKey = getPlaylistCacheKey(req.user._id.toString(), getDeviceId(req));
+    await deleteKey(cacheKey);
 }
 
 // Pulls all the playlists of the user - SPOTIFY
@@ -145,6 +219,8 @@ export async function getSpotifyPlaylists(req, res) {
         });
 
         const savedPlaylists = await Promise.all(savePromises);
+
+        await deletePlaylistCacheForDevice(req);
 
         return res.status(200).json({
             message: "Playlists fetched and saved to database successfully",

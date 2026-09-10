@@ -14,6 +14,7 @@ tags:
   - name: Playlists
   - name: Matching
   - name: Transfer
+  - name: Billing
 paths:
   /api/auth/register:
     post:
@@ -26,11 +27,45 @@ paths:
             schema: { $ref: '#/components/schemas/RegisterRequest' }
       responses:
         '201':
-          description: User created. Access and refresh cookies are set.
-          headers: { Set-Cookie: { schema: { type: string } } }
-          content: { application/json: { schema: { $ref: '#/components/schemas/AuthResponse' } } }
+          description: User created. A verification email is sent; session cookies are not set until verification.
+          content: { application/json: { schema: { $ref: '#/components/schemas/RegistrationResponse' } } }
         '400': { $ref: '#/components/responses/ValidationError' }
         '409': { description: Email is already registered, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+        '502': { description: Verification email could not be sent, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+  /api/auth/verify-email:
+    get:
+      tags: [Authentication]
+      summary: Verify a user's email address
+      description: The single-use token is sent by email after registration and expires after 24 hours. Successful verification starts a session.
+      parameters:
+        - { name: token, in: query, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Email verified and session started, content: { application/json: { schema: { $ref: '#/components/schemas/RefreshResponse' } } } }
+        '400': { description: Token is missing, invalid, or expired, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+  /api/auth/forgot-password:
+    post:
+      tags: [Authentication]
+      summary: Send a password reset link
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ForgotPasswordRequest' }
+      responses:
+        '200': { description: Generic response that does not reveal whether the email exists, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+  /api/auth/reset-password:
+    post:
+      tags: [Authentication]
+      summary: Reset a password using an emailed token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResetPasswordRequest' }
+      responses:
+        '200': { description: Password reset and session started, content: { application/json: { schema: { $ref: '#/components/schemas/RefreshResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
   /api/auth/login:
     post:
       tags: [Authentication]
@@ -56,6 +91,21 @@ paths:
         '200': { description: Current user, content: { application/json: { schema: { $ref: '#/components/schemas/CurrentUserResponse' } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Deactivated' }
+  /api/auth/account:
+    delete:
+      tags: [Authentication]
+      summary: Permanently delete the current user's account
+      description: Deletes the account, connected OAuth accounts, cached playlists, tracks, and matches. It does not delete remote Spotify or YouTube playlists. Password accounts must provide the current password.
+      security: [{ bearerAuth: [] }, { cookieAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeleteAccountRequest' }
+      responses:
+        '200': { description: Account deleted and session cookies cleared, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+        '400': { description: Confirmation phrase is missing, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+        '401': { description: Current password is incorrect, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
   /api/auth/profile:
     patch:
       tags: [Authentication]
@@ -195,8 +245,10 @@ paths:
     get:
       tags: [Playlists]
       summary: List the user's previously imported Spotify playlists
-      description: Reads cached playlist records only; it does not call Spotify. Use `GET /api/playlist/spotify` to fetch or refresh them.
+      description: Reads cached playlist records only; it does not call Spotify. Results are cached in Redis for 5 minutes per authenticated user and X-Device-ID value. Use `GET /api/playlist/spotify` to fetch or refresh them.
       security: [{ bearerAuth: [] }, { cookieAuth: [] }]
+      parameters:
+        - { name: X-Device-ID, in: header, required: false, description: Stable frontend-generated device identifier, schema: { type: string, example: browser-installation-id } }
       responses:
         '200': { description: Cached playlists, content: { application/json: { schema: { $ref: '#/components/schemas/PlaylistListResponse' } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
@@ -223,6 +275,16 @@ paths:
         '200': { description: Tracks fetched, content: { application/json: { schema: { $ref: '#/components/schemas/TrackListResponse' } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { description: Cached playlist or Spotify connection is missing }
+    delete:
+      tags: [Playlists]
+      summary: Delete a cached Spotify playlist
+      description: Deletes only the authenticated user's local Spotify playlist record, tracks, matches, and linked destination records. The identifier may be the MongoDB playlist ID or Spotify playlist ID. Remote playlists are not deleted.
+      security: [{ bearerAuth: [] }, { cookieAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/PlaylistId' }]
+      responses:
+        '200': { description: Playlist deleted, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: Saved Spotify playlist is missing, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
   /api/sync/matchplaylistTrack/{playlistId}:
     get: &matchPreview
       tags: [Matching]
@@ -294,6 +356,47 @@ paths:
         '200': { description: Search results, content: { application/json: { schema: { type: object, properties: { message: { type: string }, query: { type: string }, count: { type: integer }, results: { type: array, items: {} } } } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { description: YouTube is not connected }
+  /api/billing/status:
+    get:
+      tags: [Billing]
+      summary: Get the current subscription status
+      security: [{ bearerAuth: [] }, { cookieAuth: [] }]
+      responses:
+        '200': { description: Subscription status, content: { application/json: { schema: { $ref: '#/components/schemas/BillingStatusResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/billing/checkout-session:
+    post:
+      tags: [Billing]
+      summary: Create a Stripe Checkout subscription session
+      security: [{ bearerAuth: [] }, { cookieAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CheckoutRequest' }
+      responses:
+        '201': { description: Checkout session created, content: { application/json: { schema: { $ref: '#/components/schemas/CheckoutResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { description: User already has a Stripe subscription, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+        '503': { description: Stripe is not configured, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+  /api/billing/portal-session:
+    post:
+      tags: [Billing]
+      summary: Create a Stripe customer portal session
+      security: [{ bearerAuth: [] }, { cookieAuth: [] }]
+      responses:
+        '200': { description: Portal session created, content: { application/json: { schema: { $ref: '#/components/schemas/PortalResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: No Stripe customer exists for the user }
+  /api/billing/webhook:
+    post:
+      tags: [Billing]
+      summary: Receive Stripe subscription events
+      description: Public endpoint for Stripe with signature verification.
+      responses:
+        '200': { description: Webhook received, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+        '400': { description: Invalid Stripe signature }
 components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
@@ -313,8 +416,12 @@ components:
     Message: { type: object, required: [message], properties: { message: { type: string } } }
     RegisterRequest: { type: object, required: [email, password], properties: { name: { type: string, example: Ada Lovelace }, email: { type: string, format: email, example: ada@example.com }, password: { type: string, format: password, example: correct-horse-battery-staple } } }
     LoginRequest: { type: object, required: [email, password], properties: { email: { type: string, format: email }, password: { type: string, format: password } } }
+    DeleteAccountRequest: { type: object, required: [confirmation], properties: { confirmation: { type: string, const: DELETE }, currentPassword: { type: string, format: password } } }
+    ForgotPasswordRequest: { type: object, required: [email], properties: { email: { type: string, format: email } } }
+    ResetPasswordRequest: { type: object, required: [token, newPassword], properties: { token: { type: string }, newPassword: { type: string, format: password, minLength: 8 } } }
     User: { type: object, required: [id, email, transferredPlaylists], properties: { id: { type: string }, email: { type: string, format: email }, name: { type: [string, 'null'] }, avatarUrl: { type: [string, 'null'], format: uri }, transferredPlaylists: { type: integer, minimum: 0 }, subscription: { type: object }, isActive: { type: boolean } } }
     AuthResponse: { type: object, required: [message, user, accessToken], properties: { message: { type: string }, user: { $ref: '#/components/schemas/User' }, accessToken: { type: string, description: JWT; also returned as an HttpOnly cookie } } }
+    RegistrationResponse: { type: object, required: [success, message, user], properties: { success: { type: boolean }, message: { type: string }, user: { $ref: '#/components/schemas/User' }, emailId: { type: [string, 'null'] } } }
     CurrentUserResponse: { type: object, properties: { message: { type: string }, user: { allOf: [{ $ref: '#/components/schemas/User' }, { type: object, properties: { subscription: { type: object }, isActive: { type: boolean } } }] } } }
     UpdateProfileRequest: { type: object, minProperties: 1, properties: { name: { type: string, minLength: 1 }, email: { type: string, format: email }, currentPassword: { type: string, format: password }, newPassword: { type: string, format: password, minLength: 8 } } }
     RefreshResponse: { type: object, properties: { message: { type: string }, accessToken: { type: string } } }
@@ -337,3 +444,7 @@ components:
     GenerateMatchesResponse: { type: object, properties: { success: { const: true }, message: { type: string }, playlist: { type: object }, summary: { type: object, properties: { total: { type: integer }, matched: { type: integer }, noMatch: { type: integer }, errors: { type: integer } } }, results: { type: array, items: { $ref: '#/components/schemas/MatchResult' } } } }
     SavedMatchesResponse: { type: object, properties: { success: { const: true }, playlist: { type: object }, totalMatches: { type: integer }, matches: { type: array, items: { $ref: '#/components/schemas/MatchResult' } } } }
     TransferResponse: { type: object, properties: { success: { const: true }, message: { type: string }, spotifyPlaylist: { type: object, properties: { id: { type: string }, name: { type: string } } }, youtubePlaylist: { type: object, properties: { id: { type: string }, name: { type: string }, description: { type: string }, url: { type: string, format: uri } } }, totalMatches: { type: integer }, successfullyTransferred: { type: integer }, failed: { type: integer }, transferredTracks: { type: array, items: { type: object } }, failedTracks: { type: array, items: { type: object } } } }
+    CheckoutRequest: { type: object, properties: { plan: { type: string, enum: [premium_monthly, premium_yearly], default: premium_monthly } } }
+    CheckoutResponse: { type: object, required: [sessionId, checkoutUrl], properties: { sessionId: { type: string }, checkoutUrl: { type: string, format: uri } } }
+    PortalResponse: { type: object, required: [portalUrl], properties: { portalUrl: { type: string, format: uri } } }
+    BillingStatusResponse: { type: object, required: [subscription], properties: { subscription: { type: object, properties: { plan: { type: string }, status: { type: string }, currentPeriodEnd: { type: [string, 'null'], format: date-time }, cancelAtPeriodEnd: { type: boolean } } } } }

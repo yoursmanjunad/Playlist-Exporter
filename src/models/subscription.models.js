@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import Schema from "mongoose"
+import { Schema } from "mongoose";
 /**
  * SUBSCRIPTION
  * Source of truth for billing state; User.subscription is a denormalized
@@ -27,7 +27,7 @@ const SubscriptionSchema = new Schema(
     },
     status: {
       type: String,
-      enum: ['none', 'trialing', 'active', 'past_due', 'canceled', 'incomplete'],
+      enum: ['none', 'trialing', 'active', 'past_due', 'canceled', 'incomplete', 'incomplete_expired', 'unpaid', 'paused'],
       default: 'none',
       index: true,
     },
@@ -43,5 +43,5 @@ const SubscriptionSchema = new Schema(
   { timestamps: true }
 );
 
-const subscriptionModel = mongoose.model("subscriptions", subscriptionModel);
-export default subscriptionModel
+const subscriptionModel = mongoose.model("subscriptions", SubscriptionSchema);
+export default subscriptionModel;

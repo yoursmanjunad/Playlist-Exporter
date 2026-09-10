@@ -30,6 +30,7 @@ const UserSchema = new Schema(
 
     isEmailVerified: { type: Boolean, default: false },
     emailVerificationToken: { type: String, select: false },
+    emailVerificationExpires: { type: Date, select: false },
     passwordResetToken: { type: String, select: false },
     passwordResetExpires: { type: Date, select: false },
 
@@ -51,6 +52,7 @@ const UserSchema = new Schema(
     // Usage counters for free-tier limits (e.g. "3 playlist transfers/month")
     usage: {
       transfersThisMonth: { type: Number, default: 0 },
+      tracksExportedThisMonth: { type: Number, default: 0 },
       usageResetAt: { type: Date, default: Date.now },
     },
 

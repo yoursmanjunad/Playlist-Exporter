@@ -23,3 +23,24 @@ test('playlist router matches /api/playlist/:playlistId and returns auth error i
     await new Promise((resolve) => server.close(resolve));
   }
 });
+
+test('playlist router exposes DELETE /api/playlist/:playlistId', async () => {
+  const app = express();
+  app.use('/api/playlist', playlistRouter);
+
+  const server = app.listen(0);
+  const { port } = server.address();
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/playlist/abc123`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: 'Bearer invalid-token'
+      }
+    });
+
+    assert.equal(response.status, 401, 'Expected auth middleware to protect playlist deletion');
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});

@@ -13,17 +13,25 @@ import {
 import {
   addVideoToYouTubePlaylist,
 } from "../services/youtube/addVideoToPlaylist.js";
+import {
+  getUsageSummary,
+  releaseTrackCredits,
+  reconcileTransferCredits,
+  reserveTrackCredits,
+} from "../services/billing/usage.service.js";
 
 export async function createYouTubePlaylistFromSpotify(
   req,
   res
 ) {
+  let reservedTrackCount = 0;
+  const userId = req.user._id?.toString();
+
   try {
     console.log(
       "CREATE YOUTUBE PLAYLIST CONTROLLER IS RUNNING"
     );
 
-    const userId = req.user._id?.toString();
     const { playlistId } = req.params;
 
     if (!playlistId) {
@@ -122,6 +130,32 @@ export async function createYouTubePlaylistFromSpotify(
         ? decrypt(youtubeAccount.refreshToken)
         : undefined;
 
+    let creditReservation = await reserveTrackCredits(
+      userId,
+      sortedMatches.length
+    );
+
+    if (!creditReservation.allowed && creditReservation.usage?.tracksRemaining > 0) {
+      creditReservation = await reserveTrackCredits(
+        userId,
+        creditReservation.usage.tracksRemaining
+      );
+    }
+
+    if (!creditReservation.allowed) {
+      return res.status(429).json({
+        success: false,
+        code: "TRACK_CREDIT_LIMIT_REACHED",
+        message: "Your monthly track export limit has been reached.",
+        usage: creditReservation.usage,
+      });
+    }
+
+    reservedTrackCount = creditReservation.reserved || 0;
+    const matchesToTransfer = creditReservation.reserved
+      ? sortedMatches.slice(0, creditReservation.reserved)
+      : sortedMatches;
+
     const youtubePlaylist =
       await createYouTubePlaylist({
         accessToken: youtubeAccessToken,
@@ -140,7 +174,7 @@ export async function createYouTubePlaylistFromSpotify(
     const transferredTracks = [];
     const failedTracks = [];
 
-    for (const match of sortedMatches) {
+    for (const match of matchesToTransfer) {
       try {
         const videoId =
           match.bestMatch.videoId;
@@ -229,6 +263,12 @@ export async function createYouTubePlaylistFromSpotify(
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
 
+    await reconcileTransferCredits(
+      userId,
+      reservedTrackCount,
+      transferredTracks.length
+    );
+
     return res.status(201).json({
       success: true,
 
@@ -257,6 +297,9 @@ export async function createYouTubePlaylistFromSpotify(
       totalMatches:
         sortedMatches.length,
 
+      tracksAttempted:
+        matchesToTransfer.length,
+
       successfullyTransferred:
         transferredTracks.length,
 
@@ -266,8 +309,22 @@ export async function createYouTubePlaylistFromSpotify(
       transferredTracks,
 
       failedTracks,
+
+      usage: getUsageSummary({
+        ...req.user.toObject(),
+        usage: {
+          ...(req.user.usage?.toObject?.() || req.user.usage || {}),
+          tracksExportedThisMonth:
+            (req.user.usage?.tracksExportedThisMonth || 0)
+            - reservedTrackCount
+            + transferredTracks.length,
+          transfersThisMonth:
+            (req.user.usage?.transfersThisMonth || 0) + 1,
+        },
+      }),
     });
   } catch (error) {
+    await releaseTrackCredits(userId, reservedTrackCount);
     console.error(
       "CREATE YOUTUBE PLAYLIST ERROR:",
       error.response?.data ||

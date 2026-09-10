@@ -92,6 +92,16 @@
     .alert { padding: 10px; border-radius: 6px; font-size: 0.85rem; margin-bottom: 14px; display: none; }
     .alert-error { background: #7f1d1d; color: #fca5a5; }
     .alert-success { background: #064e3b; color: #6ee7b7; }
+
+    .credits-card { background: #111827; border: 1px solid #475569; border-radius: 8px; padding: 16px; margin-top: 16px; }
+    .credits-heading { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .credits-title { font-size: 0.95rem; font-weight: 700; }
+    .credits-plan { color: #93c5fd; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; }
+    .credits-value { font-size: 1.4rem; font-weight: 700; margin-bottom: 8px; }
+    .credits-value span { color: var(--text-muted); font-size: 0.8rem; font-weight: 500; }
+    .credits-track { height: 8px; background: #334155; border-radius: 4px; overflow: hidden; }
+    .credits-progress { height: 100%; width: 0; background: #38bdf8; transition: width 0.25s ease; }
+    .credits-meta { color: var(--text-muted); display: flex; justify-content: space-between; font-size: 0.75rem; margin-top: 8px; }
   </style>
 </head>
 <body>
@@ -147,6 +157,19 @@
         <div class="info-row"><span class="info-label">Name:</span> <span class="info-val" id="userName">-</span></div>
         <div class="info-row"><span class="info-label">Email:</span> <span class="info-val" id="userEmail">-</span></div>
         <div class="info-row"><span class="info-label">User ID:</span> <span class="info-val" id="userId">-</span></div>
+      </div>
+
+      <div class="credits-card" aria-live="polite">
+        <div class="credits-heading">
+          <span class="credits-title">Monthly export credits</span>
+          <span class="credits-plan" id="creditsPlan">Free plan</span>
+        </div>
+        <div class="credits-value" id="creditsValue">0 <span>/ 100 tracks</span></div>
+        <div class="credits-track"><div class="credits-progress" id="creditsProgress"></div></div>
+        <div class="credits-meta">
+          <span id="creditsRemaining">100 tracks remaining</span>
+          <span id="playlistsTransferred">0 playlists transferred</span>
+        </div>
       </div>
 
       <div class="session-card" style="margin-top: 16px;">
@@ -270,6 +293,25 @@
       document.getElementById('userName').innerText = user.name || 'User';
       document.getElementById('userEmail').innerText = user.email;
       document.getElementById('userId').innerText = user.id;
+      renderUsage(user.usage);
+    }
+
+    function renderUsage(usage = {}) {
+      const premium = usage.plan === 'premium' || usage.tracksLimit === null;
+      const exported = usage.tracksExported || 0;
+      const limit = usage.tracksLimit;
+      const remaining = usage.tracksRemaining;
+      document.getElementById('creditsPlan').innerText = premium ? 'Premium plan' : 'Free plan';
+      document.getElementById('creditsValue').innerHTML = premium
+        ? `${exported} <span>/ unlimited tracks</span>`
+        : `${exported} <span>/ ${limit || 100} tracks</span>`;
+      document.getElementById('creditsProgress').style.width = premium
+        ? '18%'
+        : `${Math.min((exported / (limit || 100)) * 100, 100)}%`;
+      document.getElementById('creditsRemaining').innerText = premium
+        ? 'Unlimited tracks remaining'
+        : `${remaining ?? Math.max((limit || 100) - exported, 0)} tracks remaining`;
+      document.getElementById('playlistsTransferred').innerText = `${usage.playlistsTransferred || 0} playlists transferred`;
     }
 
     function renderAuth() {
@@ -364,6 +406,7 @@
 
         if (res.ok) {
           showAlert(data.message || 'YouTube playlist created successfully!', 'success');
+          if (data.usage) renderUsage(data.usage);
         } else {
           showAlert(data.message || 'Failed to create the YouTube playlist');
         }
